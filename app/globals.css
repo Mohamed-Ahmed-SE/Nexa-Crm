@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./dashboard.css";
 
 @theme inline {
   --color-background: hsl(var(--background));
