@@ -4,12 +4,13 @@ import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 import { SetupNotice } from "@/components/auth/setup-notice";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 
 export default async function ResetPasswordPage() {
   if (!isSupabaseConfigured()) return <SetupNotice />;
   const supabase = await createSupabaseServerClient();
   const { data: authResult, error } = await supabase!.auth.getUser();
-  if (error) throw new Error("Unable to verify the current session.");
+  throwIfAuthVerificationFailed(error);
   if (!authResult.user) redirect("/auth/forgot-password");
 
   return (

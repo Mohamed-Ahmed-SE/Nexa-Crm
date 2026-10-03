@@ -5,6 +5,7 @@ import { SetupNotice } from "@/components/auth/setup-notice";
 import { isValidInviteToken } from "@/lib/auth/invite-token";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 export const metadata = {
@@ -29,7 +30,7 @@ export default async function AcceptInvitePage({ searchParams }: {
   const supabase = await createSupabaseServerClient();
   if (!supabase) return <SetupNotice />;
   const { data: authResult, error } = await supabase.auth.getUser();
-  if (error) throw new Error("Unable to verify the current session.");
+  throwIfAuthVerificationFailed(error);
 
   if (!authResult.user) {
     const nextPath = `/auth/accept-invite?token=${encodeURIComponent(token)}`;

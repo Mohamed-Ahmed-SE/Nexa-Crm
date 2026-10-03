@@ -4,6 +4,7 @@ import { SignInForm } from "@/components/auth/sign-in-form";
 import { SetupNotice } from "@/components/auth/setup-notice";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { safeInternalPath } from "@/lib/auth/validation";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export default async function SignInPage({ searchParams }: {
@@ -12,7 +13,7 @@ export default async function SignInPage({ searchParams }: {
   if (!isSupabaseConfigured()) return <SetupNotice />;
   const supabase = await createSupabaseServerClient();
   const { data: authResult, error } = await supabase!.auth.getUser();
-  if (error) throw new Error("Unable to verify the current session.");
+  throwIfAuthVerificationFailed(error);
   if (authResult.user) redirect("/app/dashboard");
 
   const params = await searchParams;

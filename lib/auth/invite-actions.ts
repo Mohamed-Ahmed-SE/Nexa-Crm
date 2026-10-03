@@ -10,6 +10,7 @@ import { safeInternalPath } from "@/lib/auth/validation";
 import type { InviteActionState, MemberActionState } from "@/lib/auth/member-actions";
 import { getSupabaseEnvironment } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 
 const inviteSchema = z.object({
   email: z.string().trim().email().max(254).transform((email) => email.toLowerCase()),
@@ -99,7 +100,8 @@ export async function acceptWorkspaceInviteAction(
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { message: "Authentication is not configured." };
   const { data: authResult, error: authError } = await supabase.auth.getUser();
-  if (authError || !authResult.user) return { message: "Sign in with the invited account before accepting this invitation." };
+  throwIfAuthVerificationFailed(authError);
+  if (!authResult.user) return { message: "Sign in with the invited account before accepting this invitation." };
 
   const { error } = await supabase.rpc("accept_workspace_invite", {
     invite_token_hash: hashInviteToken(parsedToken.data),

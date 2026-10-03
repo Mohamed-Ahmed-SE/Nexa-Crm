@@ -2,6 +2,7 @@ import "server-only";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isWorkspaceRole } from "@/lib/auth/permissions";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 import { deriveWorkspaceContext, type WorkspaceContext } from "@/lib/auth/workspace-context";
 
 export { deriveWorkspaceContext };
@@ -12,7 +13,7 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
   if (!supabase) return null;
 
   const { data: authResult, error: authError } = await supabase.auth.getUser();
-  if (authError) throw new Error("Unable to verify the current session.");
+  throwIfAuthVerificationFailed(authError);
   const user = authResult.user;
   if (!user) return null;
 

@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 import {
   createWorkspaceSchema,
   forgotPasswordSchema,
@@ -74,7 +75,8 @@ export async function createWorkspaceAction(_previous: FormState, formData: Form
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { message: "Authentication is not configured. Ask your administrator to complete Supabase setup." };
   const { data: authResult, error: authError } = await supabase.auth.getUser();
-  if (authError || !authResult.user) return { message: "Sign in before creating a workspace." };
+  throwIfAuthVerificationFailed(authError);
+  if (!authResult.user) return { message: "Sign in before creating a workspace." };
 
   const { error } = await supabase.rpc("create_first_workspace", {
     workspace_name: fields.data.name,

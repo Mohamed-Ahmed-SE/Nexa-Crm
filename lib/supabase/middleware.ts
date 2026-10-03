@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnvironment } from "@/lib/supabase/env";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 
 export async function refreshSupabaseSession(request: NextRequest) {
   const environment = getSupabaseEnvironment();
@@ -18,6 +19,7 @@ export async function refreshSupabaseSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const { error } = await supabase.auth.getUser();
+  throwIfAuthVerificationFailed(error);
   return response;
 }

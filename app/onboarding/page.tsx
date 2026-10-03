@@ -5,6 +5,7 @@ import { SetupNotice } from "@/components/auth/setup-notice";
 import { getWorkspaceContext } from "@/lib/auth/context";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export default async function OnboardingPage() {
   if (!isSupabaseConfigured()) return <SetupNotice />;
   const supabase = await createSupabaseServerClient();
   const { data: authResult, error } = await supabase!.auth.getUser();
-  if (error) throw new Error("Unable to verify the current session.");
+  throwIfAuthVerificationFailed(error);
   if (!authResult.user) redirect("/auth/sign-in?next=/onboarding");
   if (await getWorkspaceContext()) redirect("/app/dashboard");
 
