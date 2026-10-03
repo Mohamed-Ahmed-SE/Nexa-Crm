@@ -516,3 +516,574 @@ input:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+.auth-page {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px 20px;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.auth-card {
+  width: min(100%, 440px);
+  padding: 30px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: hsl(var(--surface));
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.auth-description {
+  margin: 7px 0 22px;
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 17px;
+}
+
+.auth-field {
+  display: grid;
+  gap: 7px;
+}
+
+.auth-field label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.auth-field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font-size: 13px;
+}
+
+.auth-field input:hover {
+  border-color: hsl(var(--muted-foreground) / 0.55);
+}
+
+.auth-field input:focus-visible {
+  border-color: hsl(var(--primary));
+}
+
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap input {
+  padding-right: 62px;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  padding: 5px;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-link-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -7px;
+}
+
+.auth-link-row a,
+.auth-secondary-link {
+  color: hsl(var(--primary));
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-link-row a:hover,
+.auth-secondary-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.auth-submit {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: 7px;
+  background: hsl(var(--primary));
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-submit:hover:not(:disabled) {
+  background: hsl(222 89% 47%);
+}
+
+.auth-submit:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.auth-message {
+  margin: 0;
+  padding: 10px 11px;
+  border: 1px solid hsl(0 70% 85%);
+  border-radius: 7px;
+  background: hsl(0 80% 98%);
+  color: hsl(0 56% 35%);
+  font-size: 12px;
+}
+
+.auth-success {
+  border-color: hsl(145 35% 82%);
+  background: hsl(145 45% 97%);
+  color: hsl(145 45% 25%);
+}
+
+.auth-secondary-link {
+  justify-self: center;
+  text-align: center;
+}
+
+.auth-footer {
+  margin: 20px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.auth-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.auth-hint,
+.optional-label {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.optional-label {
+  margin-left: 5px;
+  font-weight: 400;
+}
+
+.onboarding-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 24px;
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.progress-step-active {
+  color: hsl(var(--primary));
+  font-weight: 650;
+}
+
+.progress-divider {
+  height: 1px;
+  min-width: 10px;
+  flex: 1;
+  background: hsl(var(--border));
+}
+
+.setup-code {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--muted));
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.setup-code code,
+.auth-description code {
+  overflow-wrap: anywhere;
+}
+
+.sign-out-button {
+  padding: 7px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.sign-out-button:hover {
+  background: hsl(var(--muted));
+}
+
+@media (max-width: 680px) {
+  .auth-page {
+    justify-content: flex-start;
+    padding: max(42px, 9vh) 17px 28px;
+  }
+
+  .auth-card {
+    padding: 24px 21px;
+  }
+
+  .auth-card h1 {
+    font-size: 21px;
+  }
+
+  .workspace-copy {
+    display: none;
+  }
+
+  .sign-out-button {
+    min-height: 36px;
+    padding-inline: 8px;
+  }
+}
+
+.auth-field > span {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.auth-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font-size: 13px;
+}
+
+.auth-field select:focus-visible {
+  border-color: hsl(var(--primary));
+}
+
+.auth-submit-link {
+  display: block;
+  min-height: 40px;
+  padding: 10px 14px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.workspace-access {
+  display: grid;
+  gap: 14px;
+}
+
+.access-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--surface));
+}
+
+.access-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 15px 16px 12px;
+}
+
+.access-panel-heading h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.access-panel-heading p {
+  margin: 3px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.access-invite-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(145px, 210px) auto;
+  align-items: end;
+  gap: 12px;
+  padding: 0 16px 16px;
+}
+
+.access-submit {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
+.access-share-link {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.access-share-link .auth-field {
+  min-width: 0;
+  flex: 1;
+}
+
+.access-share-link input {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.access-quiet-button {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.access-quiet-button:hover:not(:disabled) {
+  background: hsl(var(--muted));
+}
+
+.access-quiet-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.access-message {
+  margin: 0 16px 14px;
+  padding: 9px 11px;
+  border: 1px solid hsl(0 70% 85%);
+  border-radius: 7px;
+  background: hsl(0 80% 98%);
+  color: hsl(0 56% 35%);
+  font-size: 12px;
+}
+
+.access-message-success {
+  border-color: hsl(145 35% 82%);
+  background: hsl(145 45% 97%);
+  color: hsl(145 45% 25%);
+}
+
+.access-copy-state {
+  align-self: center;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.access-table {
+  min-width: 760px;
+}
+
+.access-table td:first-child strong,
+.access-table td:first-child .access-secondary {
+  display: block;
+}
+
+.access-table td:first-child strong {
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.access-secondary {
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+}
+
+.access-status {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 99px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.access-status-active,
+.access-status-accepted {
+  background: hsl(145 45% 95%);
+  color: hsl(145 45% 28%);
+}
+
+.access-status-pending {
+  background: hsl(215 86% 96%);
+  color: hsl(215 72% 39%);
+}
+
+.access-status-deactivated,
+.access-status-revoked,
+.access-status-expired {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
+.access-controls {
+  display: grid;
+  gap: 5px;
+}
+
+.access-inline-form {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.access-inline-form select {
+  min-height: 30px;
+  max-width: 108px;
+  padding: 0 7px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font-size: 11px;
+}
+
+.access-inline-form .access-message {
+  max-width: 200px;
+  margin: 0;
+}
+
+.access-empty {
+  margin: 0;
+  padding: 0 16px 16px;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.access-settings-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--surface));
+  color: inherit;
+  text-decoration: none;
+}
+
+.access-settings-link:hover {
+  border-color: hsl(var(--primary) / 0.45);
+  background: hsl(var(--primary) / 0.015);
+}
+
+.access-settings-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: hsl(var(--primary-soft));
+  color: hsl(var(--primary));
+}
+
+.access-settings-link strong,
+.access-settings-link small {
+  display: block;
+}
+
+.access-settings-link strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.access-settings-link small {
+  margin-top: 2px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.invite-sign-out-form {
+  display: flex;
+  justify-content: center;
+}
+
+.invite-sign-out-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+@media (max-width: 760px) {
+  .access-invite-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .access-invite-form .access-submit {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .access-invite-form {
+    grid-template-columns: 1fr;
+  }
+
+  .access-invite-form .access-submit {
+    grid-column: auto;
+  }
+
+  .access-panel-heading {
+    padding-inline: 12px;
+  }
+
+  .access-invite-form,
+  .access-share-link {
+    padding-inline: 12px;
+  }
+
+  .access-share-link {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .access-copy-state {
+    width: 100%;
+  }
+}

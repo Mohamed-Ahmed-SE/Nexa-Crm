@@ -5,12 +5,15 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Bell, Menu, Search, X } from "lucide-react";
 import { SidebarNavigation } from "@/components/shell/sidebar-navigation";
+import { signOutAction } from "@/lib/auth/actions";
+import type { WorkspaceContext } from "@/lib/auth/context";
 
 type AppShellProps = {
   children: React.ReactNode;
+  context: WorkspaceContext;
 };
 
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, context }: AppShellProps) {
   const pathname = usePathname();
   const [isMobileNavigationOpen, setIsMobileNavigationOpen] = useState(false);
   const NavigationToggleIcon = isMobileNavigationOpen ? X : Menu;
@@ -67,12 +70,15 @@ export function AppShell({ children }: AppShellProps) {
               <Bell aria-hidden="true" size={18} />
             </button>
             <div aria-label="Nexa CRM workspace" className="workspace-identity">
-              <span aria-hidden="true" className="user-avatar">N</span>
+              <span aria-hidden="true" className="user-avatar">{context.fullName.slice(0, 1).toUpperCase()}</span>
               <span className="workspace-copy">
-                <span className="workspace-name">Your workspace</span>
-                <span className="workspace-caption">Not configured</span>
+                <span className="workspace-name">{context.workspaceName}</span>
+                <span className="workspace-caption">{context.fullName} · {context.role}</span>
               </span>
             </div>
+            <form action={signOutAction}>
+              <button className="sign-out-button" type="submit">Sign out</button>
+            </form>
           </div>
         </header>
         <main className="main-content">{children}</main>
