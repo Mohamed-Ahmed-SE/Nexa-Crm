@@ -11,7 +11,7 @@
 | Visibility and operations | `02-prd-mvp.md`, `09-api-server-actions.md`, `12-testing-acceptance.md` | Data-derived dashboard/reports, search, notifications, imports/exports, settings |
 | Hardening | `12-testing-acceptance.md`, `15-definition-of-done.md`, `19-case-study-framework.md`, `20-visual-reference-map.md`, `21-implementation-checklist.md` | Responsive/accessibility/security review, E2E coverage, and verified release checklist |
 
-The repository audit found only the brief root `README.md` and the supplied `/docs` requirements and visual references; no app, package manifest, or existing test/tooling configuration is present. All seven visual references were inspected. The first implementation slice should therefore bootstrap the foundation only and leave the project runnable; it must not claim the full CRM MVP is complete.
+The inspected repository contains a Next.js 15 App Router/TypeScript application, npm scripts for lint/typecheck/Vitest, Supabase auth/workspace code, three Phase 1 migrations, and a pgTAP workspace-invitations suite. CRM navigation pages exist as placeholders and, before this slice, no CRM business-table migration existed. The new Phase 2 migration creates only the requested core entities and seeds per-workspace configuration (not customer records). Schema ambiguity resolved: lead statuses use lower-case database values (`new`, `contacted`, `qualified`, `unqualified`, `converted`), while the documentation describes these as display labels; contact lifecycle status is constrained to the lower-case values `active`, `inactive`, `customer`, and `former_customer` because no canonical set was specified.
 
 ## Decisions / constraints
 

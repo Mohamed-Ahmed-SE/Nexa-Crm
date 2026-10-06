@@ -1,0 +1,73 @@
+{
+  "product": "Nexa CRM",
+  "mvp_modules": [
+    "auth",
+    "onboarding",
+    "workspace",
+    "users_roles",
+    "dashboard",
+    "leads",
+    "contacts",
+    "companies",
+    "deals",
+    "tasks",
+    "activities",
+    "notes",
+    "reports",
+    "search",
+    "notifications",
+    "csv_import_export",
+    "settings"
+  ],
+  "roles": [
+    "admin",
+    "manager",
+    "member",
+    "viewer"
+  ],
+  "core_entities": [
+    "workspace",
+    "profile",
+    "workspace_member",
+    "workspace_invite",
+    "lead",
+    "contact",
+    "company",
+    "pipeline",
+    "pipeline_stage",
+    "deal",
+    "task",
+    "activity",
+    "note",
+    "attachment",
+    "tag",
+    "lead_source",
+    "lost_reason",
+    "notification",
+    "saved_view",
+    "import_job",
+    "audit_event"
+  ],
+  "non_goals_mvp": [
+    "email_sync",
+    "telephony",
+    "whatsapp",
+    "marketing_automation",
+    "ai_assistant",
+    "accounting",
+    "support_ticketing",
+    "workflow_builder"
+  ],
+  "visual_reference_files": [
+    "01-dashboard.png",
+    "02-leads.png",
+    "03-deals-kanban.png",
+    "04-deal-detail.png",
+    "05-contact-detail.png",
+    "06-tasks.png",
+    "07-reports.png"
+  ],
+  "case_study": true,
+  "design_direction": "premium light B2B SaaS CRM; compact tables, subtle borders, KPI cards, Kanban, detail rails, restrained charts",
+  "scope_rule": "Visual references define appearance; product docs define feature scope."
+}
