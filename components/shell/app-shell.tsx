@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import { Bell, Menu, Search, X } from "lucide-react";
+import { Bell, Menu, X } from "lucide-react";
+import { GlobalSearch } from "@/components/shell/global-search";
 import { SidebarNavigation } from "@/components/shell/sidebar-navigation";
+import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { signOutAction } from "@/lib/auth/actions";
 import type { WorkspaceContext } from "@/lib/auth/context";
 
@@ -49,26 +51,11 @@ export function AppShell({ children, context }: AppShellProps) {
           >
             <NavigationToggleIcon aria-hidden="true" size={19} />
           </button>
-          <div aria-label="Search" className="global-search" role="search">
-            <Search aria-hidden="true" size={17} />
-            <input
-              aria-label="Search CRM"
-              disabled
-              placeholder="Search will be available when CRM data is connected"
-              type="search"
-            />
-            <span aria-hidden="true" className="search-shortcut">⌘ K</span>
-          </div>
+          <GlobalSearch canCreate={hasWorkspacePermission(context.role, "crm.create")} />
           <div className="topbar-actions">
-            <button
-              aria-label="Notifications are not connected"
-              className="icon-button"
-              disabled
-              title="Notifications are not connected"
-              type="button"
-            >
+            <Link aria-label="Notifications" className="icon-button" href="/app/notifications" title="Notifications">
               <Bell aria-hidden="true" size={18} />
-            </button>
+            </Link>
             <div aria-label="Nexa CRM workspace" className="workspace-identity">
               <span aria-hidden="true" className="user-avatar">{context.fullName.slice(0, 1).toUpperCase()}</span>
               <span className="workspace-copy">
