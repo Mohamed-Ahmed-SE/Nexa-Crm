@@ -1,0 +1,44 @@
+.content { max-width: 1480px; margin: 0 auto; }
+.pageHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 15px; margin: 3px 0 18px; }
+.pageHeader h1 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -.025em; line-height: 1.2; }
+.pageHeader p { margin: 5px 0 0; color: hsl(var(--muted-foreground)); font-size: 13px; }
+.sampleTag { flex: 0 0 auto; padding: 5px 9px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--surface)); color: hsl(var(--muted-foreground)); font-size: 11px; font-weight: 550; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 12px; }
+.search { display: flex; min-width: min(100%, 320px); min-height: 37px; flex: 1 1 300px; align-items: center; gap: 8px; padding: 0 10px; border: 1px solid hsl(var(--border)); border-radius: 8px; background: hsl(var(--surface)); color: hsl(var(--muted-foreground)); }
+.search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: hsl(var(--foreground)); font-size: 12px; }
+.search:focus-within { outline: 3px solid hsl(var(--focus) / .45); outline-offset: 2px; }
+.search input::placeholder { color: hsl(var(--muted-foreground)); opacity: 1; }
+.resultCount { margin-left: auto; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.panel { min-width: 0; overflow: hidden; margin-bottom: 14px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--surface)); }
+.tableScroll { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; text-align: left; white-space: nowrap; }
+.table th, .table td { height: 43px; padding: 8px 11px; border-bottom: 1px solid hsl(var(--border)); font-size: 11px; }
+.table thead th { height: 37px; background: hsl(var(--muted) / .65); color: hsl(var(--muted-foreground)); font-size: 10px; font-weight: 600; }
+.table tbody th { color: hsl(var(--foreground)); font-weight: 550; }
+.table tbody tr:last-child th, .table tbody tr:last-child td { border-bottom: 0; }
+.table tbody tr:hover { background: hsl(var(--muted) / .42); }
+.table a, .backLink { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 3px; }
+.table a:focus-visible, .backLink:focus-visible { outline: 3px solid hsl(var(--focus) / .55); outline-offset: 3px; border-radius: 3px; }
+.empty { margin: 0; padding: 24px 16px; color: hsl(var(--muted-foreground)); font-size: 12px; text-align: center; }
+.backLink { display: inline-flex; align-items: center; gap: 7px; margin: 2px 0 14px; font-size: 12px; font-weight: 550; }
+.sectionHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px 8px; }
+.sectionHeading h2 { margin: 0; font-size: 14px; font-weight: 650; }
+.sectionHeading > span { color: hsl(var(--muted-foreground)); font-size: 11px; font-variant-numeric: tabular-nums; }
+.contactFacts, .companyFacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 22px; margin: 0; padding: 0 14px 12px; }
+.contactFacts div, .companyFacts div { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 1.3fr); align-items: center; gap: 12px; min-height: 39px; border-bottom: 1px solid hsl(var(--border)); font-size: 11px; }
+.contactFacts dt, .companyFacts dt { color: hsl(var(--muted-foreground)); }
+.contactFacts dd, .companyFacts dd { overflow-wrap: anywhere; margin: 0; color: hsl(var(--foreground)); text-align: right; }
+.sectionNote { margin: 0; padding: 0 14px 8px; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
+
+@media (max-width: 640px) {
+  .content { width: 100%; }
+  .pageHeader { align-items: flex-start; margin-bottom: 13px; }
+  .pageHeader h1 { font-size: 21px; }
+  .pageHeader p { max-width: 38ch; font-size: 12px; }
+  .toolbar { gap: 7px; }
+  .search { min-width: 100%; }
+  .resultCount { margin-left: 0; }
+  .table { min-width: 590px; }
+  .contactFacts, .companyFacts { grid-template-columns: 1fr; }
+}

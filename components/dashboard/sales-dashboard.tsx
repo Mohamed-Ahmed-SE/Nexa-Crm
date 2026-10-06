@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Activity, ArrowDownWideNarrow, ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Clock3, Download, Filter, Handshake, Layers3, LayoutGrid, List, Plus, Search, UsersRound } from "lucide-react";
+import { Activity, ArrowDownWideNarrow, ArrowRightLeft, ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Clock3, Download, FileText, Filter, Handshake, Layers3, LayoutGrid, List, ListChecks, Plus, Search, UsersRound } from "lucide-react";
 import { createDemoRecords, formatCurrency, selectDashboard, selectVisibleDeals, type DateScope, type DealSort } from "@/lib/dashboard-data";
 
 const dateScopes: { label: string; value: DateScope }[] = [
@@ -74,9 +74,9 @@ function SourceWidget({ sources }: { sources: ReturnType<typeof selectDashboard>
 }
 
 function ActivityWidget({ activities }: { activities: ReturnType<typeof selectDashboard>["activities"] }) {
-  const ActivityIcon = { meeting: UsersRound, call: Activity, email: Download, won: CheckCircle2 };
+  const ActivityIcon = { meeting: UsersRound, call: Activity, email: Download, won: CheckCircle2, note: FileText, stageChange: ArrowRightLeft, taskCompletion: ListChecks };
   return <section aria-labelledby="activity-title" className="support-panel activity-panel">
-    <div className="panel-heading"><div><h2 id="activity-title">Recent activity</h2><p>Latest workspace updates</p></div><Link href="/app/deals">Deals <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
+    <div className="panel-heading"><div><h2 id="activity-title">Recent activity</h2><p>Latest workspace updates</p></div><Link href="/demo/deals">Deals <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
     {activities.length ? <ul className="activity-list">{activities.slice(0, 4).map((activity) => {
       const Icon = ActivityIcon[activity.kind];
       return <li key={activity.id}><span className={`activity-icon activity-${activity.kind}`}><Icon aria-hidden="true" size={15} /></span><div><strong>{activity.title}</strong><span>{activity.detail}</span><time dateTime={activity.occurredAt}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(activity.occurredAt))}</time></div></li>;
@@ -86,7 +86,7 @@ function ActivityWidget({ activities }: { activities: ReturnType<typeof selectDa
 
 function TaskWidget({ tasks, now }: { tasks: ReturnType<typeof selectDashboard>["dueToday"]; now: Date }) {
   return <section aria-labelledby="tasks-title" className="support-panel tasks-panel">
-    <div className="panel-heading"><div><h2 id="tasks-title">Tasks due today</h2><p>{tasks.length} open task{tasks.length === 1 ? "" : "s"}</p></div><Link href="/app/tasks">View tasks <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
+    <div className="panel-heading"><div><h2 id="tasks-title">Tasks due today</h2><p>{tasks.length} open task{tasks.length === 1 ? "" : "s"}</p></div><Link href="/demo/tasks">View tasks <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
     {tasks.length ? <ul className="dashboard-task-list">{tasks.map((task) => <li key={task.id}><span className={`task-priority priority-${task.priority.toLowerCase()}`} /><div><strong>{task.title}</strong><span>{task.relatedTo}</span></div><time dateTime={task.dueAt}>{new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(task.dueAt))}</time></li>)}</ul> : <div className="widget-empty"><CheckCircle2 aria-hidden="true" size={18} /> No open tasks due today.</div>}
     <span className="sr-only">As of {now.toLocaleDateString("en-US")}</span>
   </section>;
@@ -94,7 +94,7 @@ function TaskWidget({ tasks, now }: { tasks: ReturnType<typeof selectDashboard>[
 
 function AttentionWidget({ attentionDeals }: { attentionDeals: ReturnType<typeof selectDashboard>["attentionDeals"] }) {
   return <section aria-labelledby="attention-title" className="support-panel attention-panel">
-    <div className="panel-heading"><div><h2 id="attention-title">Deals needing attention</h2><p>Open deals with a follow-up risk</p></div><Link href="/app/deals">View deals <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
+    <div className="panel-heading"><div><h2 id="attention-title">Deals needing attention</h2><p>Open deals with a follow-up risk</p></div><Link href="/demo/deals">View deals <ArrowUpRight aria-hidden="true" size={13} /></Link></div>
     {attentionDeals.length ? <ul className="attention-list">{attentionDeals.slice(0, 4).map(({ deal, reasons }) => <li key={deal.id}><span className="attention-dot" /><div><strong>{deal.company}</strong><span>{reasons[0]}</span></div><b>{formatCurrency(deal.amount)}</b></li>)}</ul> : <div className="widget-empty"><CheckCircle2 aria-hidden="true" size={18} /> No deals need attention.</div>}
   </section>;
 }
@@ -132,10 +132,10 @@ export function SalesDashboard() {
     <aside aria-label="Sample data notice" className="demo-notice"><span className="demo-indicator" /><div><strong>Sample demo workspace</strong><span>Fictional records for preview only — not live customer data. Nothing here is saved.</span></div></aside>
     <section aria-label="Sales key performance indicators" className="metric-grid">
       <MetricCard label="Total pipeline value" value={formatCurrency(summary.pipelineValue)} note="Current open deals · USD" icon={CircleDollarSign} tone="tone-green" />
-      <MetricCard label="Open deals" value={String(summary.openDealCount)} note="Across all open stages" icon={Layers3} tone="tone-blue" href="/app/deals" />
-      <MetricCard label="New leads" value={String(summary.newLeadCount)} note={dateScopes.find(({ value }) => value === scope)?.label ?? "Selected period"} icon={UsersRound} tone="tone-violet" href="/app/leads" />
+      <MetricCard label="Open deals" value={String(summary.openDealCount)} note="Across all open stages" icon={Layers3} tone="tone-blue" href="/demo/deals" />
+      <MetricCard label="New leads" value={String(summary.newLeadCount)} note={dateScopes.find(({ value }) => value === scope)?.label ?? "Selected period"} icon={UsersRound} tone="tone-violet" href="/demo/leads" />
       <MetricCard label="Won revenue" value={formatCurrency(summary.wonRevenue)} note="Closed won in selected period" icon={Handshake} tone="tone-green" />
-      <MetricCard label="Overdue tasks" value={String(summary.overdueTaskCount)} note="Open and past due" icon={Clock3} tone="tone-red" href="/app/tasks" />
+      <MetricCard label="Overdue tasks" value={String(summary.overdueTaskCount)} note="Open and past due" icon={Clock3} tone="tone-red" href="/demo/tasks" />
     </section>
     <section aria-labelledby="deals-title" className="deals-panel">
       <div className="deals-heading"><div><div className="deals-title-row"><h2 id="deals-title">Deal overview</h2><span className="record-count">{visibleDeals.length} deals</span></div><p>Deals created in the selected period</p></div>
