@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { Search } from "lucide-react";
 import { createDemoRecords, formatCurrency, selectDemoReports, type CompanyRecord, type DealRecord, type LeadRecord, type TaskRecord } from "@/lib/dashboard-data";
 import styles from "./demo.module.css";
@@ -25,19 +26,19 @@ function DataTable({ children, headings, label }: { children: React.ReactNode; h
 
 function LeadsTable({ leads }: { leads: LeadRecord[] }) {
   return <DataTable headings={["Name", "Company", "Status", "Source", "Owner", "Estimated value", "Created"]} label="Fictional demo leads">
-    {leads.map((lead) => <tr key={lead.id}><th scope="row">{lead.name}</th><td>{lead.company}</td><td><span className={`${styles.pill} ${styles[`status${lead.status}`]}`}>{lead.status}</span></td><td>{lead.source}</td><td>{lead.owner}</td><td>{formatCurrency(lead.estimatedValue)}</td><td><time dateTime={lead.createdAt}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(lead.createdAt))}</time></td></tr>)}
+    {leads.map((lead) => <tr key={lead.id}><th scope="row"><Link href={`/demo/leads/${lead.id}`}>{lead.name}</Link></th><td>{lead.company}</td><td><span className={`${styles.pill} ${styles[`status${lead.status}`]}`}>{lead.status}</span></td><td>{lead.source}</td><td>{lead.owner}</td><td>{formatCurrency(lead.estimatedValue)}</td><td><time dateTime={lead.createdAt}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(lead.createdAt))}</time></td></tr>)}
   </DataTable>;
 }
 
 function CompaniesTable({ companies }: { companies: CompanyRecord[] }) {
   return <DataTable headings={["Company", "Industry", "Owner", "Contacts", "Open pipeline"]} label="Fictional demo companies">
-    {companies.map((company) => <tr key={company.id}><th scope="row">{company.name}</th><td>{company.industry}</td><td>{company.owner}</td><td>{company.contactCount}</td><td>{formatCurrency(company.openPipeline)}</td></tr>)}
+    {companies.map((company) => <tr key={company.id}><th scope="row"><Link href={`/demo/companies/${company.id}`}>{company.name}</Link></th><td>{company.industry}</td><td>{company.owner}</td><td>{company.contactCount}</td><td>{formatCurrency(company.openPipeline)}</td></tr>)}
   </DataTable>;
 }
 
 function DealsTable({ deals }: { deals: DealRecord[] }) {
   return <DataTable headings={["Deal", "Contact", "Company", "Stage", "Value", "Owner", "Expected close", "Status"]} label="Fictional demo deals">
-    {deals.map((deal) => <tr key={deal.id}><th scope="row">{deal.title}</th><td>{deal.contact}</td><td>{deal.company}</td><td><span className={styles.pill}>{deal.stage}</span></td><td>{formatCurrency(deal.amount)}</td><td>{deal.owner}</td><td><time dateTime={deal.expectedCloseDate}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${deal.expectedCloseDate}T12:00:00`))}</time></td><td><span className={`${styles.pill} ${styles[`status${deal.status}`]}`}>{deal.status}</span></td></tr>)}
+    {deals.map((deal) => <tr key={deal.id}><th scope="row"><Link href={`/demo/deals/${deal.id}`}>{deal.title}</Link></th><td>{deal.contact}</td><td>{deal.company}</td><td><span className={styles.pill}>{deal.stage}</span></td><td>{formatCurrency(deal.amount)}</td><td>{deal.owner}</td><td><time dateTime={deal.expectedCloseDate}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(`${deal.expectedCloseDate}T12:00:00`))}</time></td><td><span className={`${styles.pill} ${styles[`status${deal.status}`]}`}>{deal.status}</span></td></tr>)}
   </DataTable>;
 }
 

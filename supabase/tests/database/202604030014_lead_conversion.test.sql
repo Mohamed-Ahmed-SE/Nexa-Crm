@@ -14,8 +14,7 @@ values ('e1200000-0000-4000-8000-000000000001', 'Conversion workspace', 'convers
 insert into public.workspace_members (workspace_id, user_id, role)
 values ('e1200000-0000-4000-8000-000000000001', 'e1100000-0000-4000-8000-000000000001', 'admin'),
        ('e1200000-0000-4000-8000-000000000001', 'e1100000-0000-4000-8000-000000000002', 'member'),
-       ('e1200000-0000-4000-8000-000000000001', 'e1100000-0000-4000-8000-000000000003', 'viewer'),
-       ('e1200000-0000-4000-8000-000000000002', 'e1100000-0000-4000-8000-000000000002', 'member');
+       ('e1200000-0000-4000-8000-000000000001', 'e1100000-0000-4000-8000-000000000003', 'viewer');
 insert into public.leads (id, workspace_id, full_name, company_name, email, phone, job_title, status, owner_id, estimated_value, currency, created_by)
 values
  ('e1300000-0000-4000-8000-000000000001', 'e1200000-0000-4000-8000-000000000001', 'Taylor Reed', 'Acme', 'taylor@example.test', '555-0100', 'Director', 'qualified', 'e1100000-0000-4000-8000-000000000002', 900, 'EUR', 'e1100000-0000-4000-8000-000000000002'),
@@ -23,7 +22,7 @@ values
  ('e1300000-0000-4000-8000-000000000003', 'e1200000-0000-4000-8000-000000000001', 'Only Deal', null, null, null, null, 'new', 'e1100000-0000-4000-8000-000000000002', 0, 'EUR', 'e1100000-0000-4000-8000-000000000002'),
  ('e1300000-0000-4000-8000-000000000004', 'e1200000-0000-4000-8000-000000000001', 'Company Only', 'Acme', null, null, null, 'new', 'e1100000-0000-4000-8000-000000000002', 0, 'EUR', 'e1100000-0000-4000-8000-000000000002'),
  ('e1300000-0000-4000-8000-000000000005', 'e1200000-0000-4000-8000-000000000001', 'Rollback Test', 'Late Failure', null, null, null, 'new', 'e1100000-0000-4000-8000-000000000002', 0, 'EUR', 'e1100000-0000-4000-8000-000000000002'),
- ('e1300000-0000-4000-8000-000000000006', 'e1200000-0000-4000-8000-000000000001', 'Not Owned', null, null, null, 'new', 'e1100000-0000-4000-8000-000000000001', 0, 'EUR', 'e1100000-0000-4000-8000-000000000001');
+ ('e1300000-0000-4000-8000-000000000006', 'e1200000-0000-4000-8000-000000000001', 'Not Owned', null, null, null, null, 'new', 'e1100000-0000-4000-8000-000000000001', 0, 'EUR', 'e1100000-0000-4000-8000-000000000001');
 insert into public.activities (workspace_id, activity_type, subject, body, created_by, related_entity_type, related_entity_id)
 values ('e1200000-0000-4000-8000-000000000001', 'call', 'Discovery', 'Discussed requirements', 'e1100000-0000-4000-8000-000000000002', 'lead', 'e1300000-0000-4000-8000-000000000001');
 insert into public.notes (workspace_id, body, created_by, related_entity_type, related_entity_id)
@@ -66,7 +65,20 @@ select throws_ok(
  $$select public.convert_lead('e1200000-0000-4000-8000-000000000001', 'e1300000-0000-4000-8000-000000000001', '{"createContact":false,"createCompany":false,"createDeal":true,"dealOwnerId":"e1100000-0000-4000-8000-000000000099"}')$$,
  '23514', null, 'deal owner must be an active workspace member'
 );
-select is((public.convert_lead('e1200000-0000-4000-8000-000000000001', 'e1300000-0000-4000-8000-000000000001', '{"createContact":true,"createCompany":true,"createDeal":true,"contactFirstName":"Taylor","contactLastName":"Reed","companyName":"Acme New","dealTitle":"Acme Renewal","pipelineId":"' || (select id::text from public.pipelines where workspace_id='e1200000-0000-4000-8000-000000000001' and is_default) || '","stageId":"' || (select id::text from public.pipeline_stages where workspace_id='e1200000-0000-4000-8000-000000000001' and name='Discovery') || '","dealOwnerId":"e1100000-0000-4000-8000-000000000002","dealValue":900,"closeDate":"2026-12-31"}')->>'dealId' is not null, true, 'conversion creates all selected records');
+select is(
+  (public.convert_lead(
+    'e1200000-0000-4000-8000-000000000001',
+    'e1300000-0000-4000-8000-000000000001',
+    jsonb_build_object(
+      'createContact', true, 'createCompany', true, 'createDeal', true,
+      'contactFirstName', 'Taylor', 'contactLastName', 'Reed', 'companyName', 'Acme New',
+      'dealTitle', 'Acme Renewal', 'pipelineId', (select id::text from public.pipelines where workspace_id='e1200000-0000-4000-8000-000000000001' and is_default),
+      'stageId', (select id::text from public.pipeline_stages where workspace_id='e1200000-0000-4000-8000-000000000001' and name='Discovery'),
+      'dealOwnerId', 'e1100000-0000-4000-8000-000000000002', 'dealValue', 900, 'closeDate', '2026-12-31'
+    )
+  )->>'dealId') is not null,
+  true, 'conversion creates all selected records'
+);
 select is((select status from public.leads where id='e1300000-0000-4000-8000-000000000001'), 'converted', 'original lead is retained as converted');
 select is((select count(*)::integer from public.contacts c join public.leads l on l.converted_contact_id=c.id where l.id='e1300000-0000-4000-8000-000000000001' and c.workspace_id=l.workspace_id and c.company_id=l.converted_company_id), 1, 'converted contact and company IDs link within workspace');
 select is((select count(*)::integer from public.deals d join public.leads l on l.converted_deal_id=d.id where l.id='e1300000-0000-4000-8000-000000000001' and d.workspace_id=l.workspace_id and d.company_id=l.converted_company_id and d.primary_contact_id=l.converted_contact_id and d.currency='EUR'), 1, 'converted deal links to the new targets and workspace currency');
@@ -85,14 +97,37 @@ select throws_ok(
 select is((public.convert_lead('e1200000-0000-4000-8000-000000000001', 'e1300000-0000-4000-8000-000000000002', '{"createContact":true,"createCompany":false,"createDeal":false,"contactFirstName":"Only","contactLastName":"Contact"}')->>'dealId') is null, true, 'contact-only conversion creates no deal');
 select is((select status from public.leads where id='e1300000-0000-4000-8000-000000000002'), 'converted', 'contact-only conversion records completion');
 select is((public.convert_lead('e1200000-0000-4000-8000-000000000001', 'e1300000-0000-4000-8000-000000000004', '{"createContact":false,"createCompany":true,"createDeal":false,"companyName":"Company only"}')->>'companyId') is not null, true, 'company-only conversion is supported');
-select is((public.convert_lead('e1200000-0000-4000-8000-000000000001', 'e1300000-0000-4000-8000-000000000003', '{"createContact":false,"createCompany":false,"createDeal":true,"dealTitle":"Deal only","pipelineId":"' || (select id::text from public.pipelines where workspace_id='e1200000-0000-4000-8000-000000000001' and is_default) || '","stageId":"' || (select id::text from public.pipeline_stages where workspace_id='e1200000-0000-4000-8000-000000000001' and name='Discovery') || '","dealValue":0}')->>'dealId') is not null, true, 'deal-only conversion is supported');
+select is(
+  (public.convert_lead(
+    'e1200000-0000-4000-8000-000000000001',
+    'e1300000-0000-4000-8000-000000000003',
+    jsonb_build_object(
+      'createContact', false, 'createCompany', false, 'createDeal', true,
+      'dealTitle', 'Deal only', 'pipelineId', (select id::text from public.pipelines where workspace_id='e1200000-0000-4000-8000-000000000001' and is_default),
+      'stageId', (select id::text from public.pipeline_stages where workspace_id='e1200000-0000-4000-8000-000000000001' and name='Discovery'),
+      'dealValue', 0
+    )
+  )->>'dealId') is not null,
+  true, 'deal-only conversion is supported'
+);
 
 reset role;
 create trigger fail_conversion_deal_insert before insert on public.deals for each row execute function public.fail_conversion_deal_insert();
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'e1100000-0000-4000-8000-000000000002', true);
 select throws_ok(
- $$select public.convert_lead('e1200000-0000-4000-8000-000000000001', 'e1300000-0000-4000-8000-000000000005', '{"createContact":true,"createCompany":true,"createDeal":true,"contactFirstName":"Rollback","contactLastName":"Test","companyName":"Must Roll Back","dealTitle":"Forced Error","pipelineId":"' || (select id::text from public.pipelines where workspace_id='e1200000-0000-4000-8000-000000000001' and is_default) || '","stageId":"' || (select id::text from public.pipeline_stages where workspace_id='e1200000-0000-4000-8000-000000000001' and name='Discovery') || '","dealValue":10}')$$,
+ $$select public.convert_lead(
+   'e1200000-0000-4000-8000-000000000001',
+   'e1300000-0000-4000-8000-000000000005',
+   jsonb_build_object(
+     'createContact', true, 'createCompany', true, 'createDeal', true,
+     'contactFirstName', 'Rollback', 'contactLastName', 'Test', 'companyName', 'Must Roll Back',
+     'dealTitle', 'Forced Error',
+     'pipelineId', (select id::text from public.pipelines where workspace_id='e1200000-0000-4000-8000-000000000001' and is_default),
+     'stageId', (select id::text from public.pipeline_stages where workspace_id='e1200000-0000-4000-8000-000000000001' and name='Discovery'),
+     'dealValue', 10
+   )
+ )$$,
  'P0001', 'forced late conversion failure', 'late failure aborts company and contact insertion'
 );
 reset role;

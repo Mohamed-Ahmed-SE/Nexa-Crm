@@ -3,10 +3,13 @@
 import type { ReportData, ReportOwner, ReportPipeline } from "@/lib/reports/repository";
 import type { ReportFilters } from "@/lib/reports/schema";
 import { buildReportCsv, calculateWinRate } from "@/lib/reports/presentation";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDate } from "@/lib/preferences/date-format";
 
 type Props = { report: ReportData; owners: ReportOwner[]; pipelines: ReportPipeline[]; filters: ReportFilters; currency: string };
 
 export function ReportsWorkspace({ report, owners, pipelines, filters, currency }: Props) {
+  const preferredDateFormat = useDateFormat();
   const currencyFormat = new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 });
   const dateFormat = new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
   const money = (amount: number) => currencyFormat.format(amount);
@@ -90,7 +93,7 @@ export function ReportsWorkspace({ report, owners, pipelines, filters, currency 
 
       <section className="reports-panel reports-table-panel">
         <div className="reports-panel-heading"><div><h2>Highest-value deals created</h2><p>Ranked by deal amount · creation date in selected period · maximum 10 rows</p></div><span className="reports-count">{report.top_deals.length} deals</span></div>
-        {report.top_deals.length ? <div className="reports-table-wrap"><table className="reports-table"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Owner</th><th scope="col">Stage</th><th scope="col">Amount ({currency})</th><th scope="col">Created</th><th scope="col">Status</th></tr></thead><tbody>{report.top_deals.map((deal) => <tr key={deal.id}><td><a href={`/app/deals/${deal.id}`}>{deal.title}</a></td><td>{deal.company || "—"}</td><td>{deal.owner}</td><td>{deal.stage || "—"}</td><td className="reports-amount">{money(deal.amount)}</td><td>{new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(deal.created_at))}</td><td><span className={`reports-status reports-status-${deal.status}`}>{deal.status}</span></td></tr>)}</tbody></table></div> : <ChartEmpty>No deals match the selected creation date, owner, pipeline, and currency.</ChartEmpty>}
+        {report.top_deals.length ? <div className="reports-table-wrap"><table className="reports-table"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Owner</th><th scope="col">Stage</th><th scope="col">Amount ({currency})</th><th scope="col">Created</th><th scope="col">Status</th></tr></thead><tbody>{report.top_deals.map((deal) => <tr key={deal.id}><td><a href={`/app/deals/${deal.id}`}>{deal.title}</a></td><td>{deal.company || "—"}</td><td>{deal.owner}</td><td>{deal.stage || "—"}</td><td className="reports-amount">{money(deal.amount)}</td><td>{formatCalendarDate(deal.created_at, preferredDateFormat, { timeZone: "UTC" })}</td><td><span className={`reports-status reports-status-${deal.status}`}>{deal.status}</span></td></tr>)}</tbody></table></div> : <ChartEmpty>No deals match the selected creation date, owner, pipeline, and currency.</ChartEmpty>}
       </section>
     </main>
   );

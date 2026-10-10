@@ -19,7 +19,7 @@ function textValue(formData: FormData, key: string): string {
 function parseSavedViewForm(formData: FormData) {
   return leadSavedViewSchema.safeParse({
     name: textValue(formData, "name"),
-    filters: { q: textValue(formData, "q"), status: textValue(formData, "status"), sourceId: textValue(formData, "sourceId"), ownerId: textValue(formData, "ownerId") },
+    filters: { q: textValue(formData, "q"), status: textValue(formData, "status"), sourceId: textValue(formData, "sourceId"), ownerId: textValue(formData, "ownerId"), tagId: textValue(formData, "tagId") },
     sort: textValue(formData, "sort"),
     visibleColumns: formData.getAll("visibleColumns").filter((column): column is string => typeof column === "string"),
   });

@@ -33,15 +33,22 @@ select throws_ok(
     values ('d1200000-0000-4000-8000-000000000002', 'd1100000-0000-4000-8000-000000000001', 'leads', 'Foreign', '{}', '"updated_desc"', '["name"]')$$,
   '42501', null, 'member cannot create a view in another workspace'
 );
-select throws_ok(
+select lives_ok(
   $$insert into public.saved_views (workspace_id, user_id, entity_type, name, filters, sort, visible_columns)
     values ('d1200000-0000-4000-8000-000000000001', 'd1100000-0000-4000-8000-000000000001', 'contacts', 'Contacts', '{}', '"updated_desc"', '["name"]')$$,
-  '23514', null, 'saved view entity is constrained to the Leads slice'
+  'a member can save a contacts view'
 );
 select set_config('request.jwt.claim.sub', 'd1100000-0000-4000-8000-000000000002', true);
 select is((select count(*)::integer from public.saved_views), 0, 'another workspace member cannot read a private view');
-select is((with changed as (update public.saved_views set name = 'Changed' returning 1) select count(*)::integer from changed), 0, 'another workspace member cannot update a private view');
-select is((with removed as (delete from public.saved_views returning 1) select count(*)::integer from removed), 0, 'another workspace member cannot delete a private view');
+update public.saved_views set name = 'Changed';
 reset role;
+select set_config('request.jwt.claim.sub', 'd1100000-0000-4000-8000-000000000001', true);
+select is((select count(*)::integer from public.saved_views where workspace_id = 'd1200000-0000-4000-8000-000000000001' and user_id = 'd1100000-0000-4000-8000-000000000001' and name = 'Qualified'), 1, 'another workspace member cannot update a private view');
+select set_config('request.jwt.claim.sub', 'd1100000-0000-4000-8000-000000000002', true);
+set local role authenticated;
+delete from public.saved_views;
+reset role;
+select set_config('request.jwt.claim.sub', 'd1100000-0000-4000-8000-000000000001', true);
+select is((select count(*)::integer from public.saved_views where workspace_id = 'd1200000-0000-4000-8000-000000000001' and user_id = 'd1100000-0000-4000-8000-000000000001'), 2, 'another workspace member cannot delete a private view');
 select * from finish();
 rollback;

@@ -1,0 +1,44 @@
+.content { max-width: 1480px; margin: 0 auto; }
+.pageHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 15px; margin: 3px 0 8px; }
+.pageHeader h1 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -.025em; line-height: 1.2; }
+.pageHeader p { margin: 5px 0 0; color: hsl(var(--muted-foreground)); font-size: 13px; }
+.sampleTag { flex: 0 0 auto; padding: 5px 9px; border: 1px solid hsl(var(--border)); border-radius: 7px; background: hsl(var(--surface)); color: hsl(var(--muted-foreground)); font-size: 11px; font-weight: 550; }
+.backLink { display: inline-flex; align-items: center; gap: 7px; margin: 2px 0 14px; color: hsl(var(--primary)); font-size: 12px; font-weight: 550; text-decoration: underline; text-underline-offset: 3px; }
+.backLink:focus-visible, .contact a:focus-visible { outline: 3px solid hsl(var(--focus) / .55); outline-offset: 3px; border-radius: 3px; }
+.probabilityNote { margin: 0 0 12px; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.panel { min-width: 0; overflow: hidden; margin-bottom: 14px; border: 1px solid hsl(var(--border)); border-radius: 10px; background: hsl(var(--surface)); }
+.sectionHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px 8px; }
+.sectionHeading h2 { margin: 0; font-size: 14px; font-weight: 650; }
+.sectionHeading > span { color: hsl(var(--muted-foreground)); font-size: 11px; font-variant-numeric: tabular-nums; }
+.properties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 22px; margin: 0; padding: 0 14px 12px; }
+.properties > div { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 1.2fr); align-items: center; gap: 12px; min-height: 39px; border-bottom: 1px solid hsl(var(--border)); font-size: 11px; }
+.properties dt { color: hsl(var(--muted-foreground)); }
+.properties dd { overflow-wrap: anywhere; margin: 0; color: hsl(var(--foreground)); text-align: right; font-variant-numeric: tabular-nums; }
+.pill { display: inline-flex; min-height: 21px; align-items: center; padding: 2px 7px; border-radius: 999px; background: hsl(var(--muted)); color: hsl(var(--foreground) / .82); font-size: 10px; text-transform: capitalize; }
+.statusopen { background: hsl(215 86% 95%); color: hsl(215 78% 38%); }
+.statuswon { background: hsl(153 60% 94%); color: hsl(153 57% 30%); }
+.statuslost { background: hsl(0 77% 96%); color: hsl(0 64% 42%); }
+.contact { display: grid; gap: 4px; padding: 2px 14px 14px; font-size: 11px; }
+.contact a { width: fit-content; color: hsl(var(--primary)); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.contact span { color: hsl(var(--muted-foreground)); }
+.activityList { display: grid; margin: 0; padding: 0 14px 8px; list-style: none; }
+.activityList li { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid hsl(var(--border)); font-size: 11px; }
+.activityList li:last-child { border-bottom: 0; }
+.activityList strong { font-weight: 600; }
+.activityList p { margin: 3px 0 0; color: hsl(var(--muted-foreground)); }
+.activityList time, .taskList time { flex: 0 0 auto; color: hsl(var(--muted-foreground)); font-size: 10px; font-variant-numeric: tabular-nums; }
+.sectionNote { margin: 0; padding: 0 14px 8px; color: hsl(var(--muted-foreground)); font-size: 11px; }
+.taskList { padding: 0 14px 6px; }
+.taskList article { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 42px; border-bottom: 1px solid hsl(var(--border)); font-size: 11px; }
+.taskList article:last-child { border-bottom: 0; }
+.taskList article > div { display: grid; gap: 3px; }
+.taskList article span { color: hsl(var(--muted-foreground)); font-size: 10px; text-transform: capitalize; }
+.empty { margin: 0; padding: 22px 14px; color: hsl(var(--muted-foreground)); font-size: 12px; text-align: center; }
+@media (max-width: 640px) {
+  .content { width: 100%; }
+  .pageHeader { align-items: flex-start; margin-bottom: 8px; }
+  .pageHeader h1 { font-size: 21px; }
+  .pageHeader p { max-width: 38ch; font-size: 12px; }
+  .properties { grid-template-columns: 1fr; }
+  .activityList li, .taskList article { gap: 10px; }
+}

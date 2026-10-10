@@ -3,15 +3,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, LayoutGrid, List, Plus, Search, X } from "lucide-react";
+import { AlertCircle, Download, LayoutGrid, List, Plus, Search, X } from "lucide-react";
 import { createDealAction, moveDealStageAction, updateDealAction, type DealActionResult } from "./actions";
 import type { DealOwner, DealRow, DealStage, DealsData } from "@/lib/deals/repository";
 import { getOwnerInitials, isDealOverdue } from "@/lib/deals/presentation";
 import { useCreateIntent } from "../use-create-intent";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDate, type DateFormat } from "@/lib/preferences/date-format";
 
 type Props = {
   data: DealsData;
   canCreate: boolean;
+  canExport: boolean;
   canEditOwn: boolean;
   canEditAll: boolean;
   canReassign: boolean;
@@ -30,9 +33,8 @@ function money(value: number, currency: string) {
   try { return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(value); }
   catch { return `${currency} ${Math.round(value).toLocaleString()}`; }
 }
-function shortDate(value: string | null) {
-  if (!value) return "No close date";
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+function shortDate(value: string | null, dateFormat: DateFormat) {
+  return value ? formatCalendarDate(value, dateFormat) : "No close date";
 }
 function moneyByCurrency(deals: DealRow[], weighted = false) {
   const totals = new Map<string, number>();
@@ -49,8 +51,9 @@ function OwnerDisplay({ owners, ownerId }: { owners: DealOwner[]; ownerId: strin
 }
 
 function DealAttention({ deal, todayIso }: { deal: DealRow; todayIso: string }) {
+  const dateFormat = useDateFormat();
   if (!isDealOverdue(deal.status, deal.expected_close_date, todayIso)) return null;
-  return <span aria-label={`Attention needed: expected close date ${shortDate(deal.expected_close_date)} is overdue`} className="deals-attention" role="note"><AlertCircle aria-hidden="true" size={12} /><span>Overdue</span></span>;
+  return <span aria-label={`Attention needed: expected close date ${shortDate(deal.expected_close_date, dateFormat)} is overdue`} className="deals-attention" role="note"><AlertCircle aria-hidden="true" size={12} /><span>Overdue</span></span>;
 }
 
 function DealForm({ deal, data, canReassign, currentUserId, onClose }: {
@@ -110,6 +113,7 @@ function DealCard({ deal, stages, data, canEdit, moving, onEdit, onMove, onDrag,
   deal: DealRow; stages: DealStage[]; data: DealsData; canEdit: boolean; moving: boolean; todayIso: string;
   onEdit: () => void; onMove: (stageId: string) => void; onDrag: (dealId: string) => void;
 }) {
+  const dateFormat = useDateFormat();
   const [dragging, setDragging] = useState(false);
   const company = deal.company?.name;
   const primaryContact = deal.contact?.name;
@@ -118,12 +122,13 @@ function DealCard({ deal, stages, data, canEdit, moving, onEdit, onMove, onDrag,
     <div className="deals-card-top"><div className="deals-card-name-actions"><button className="deals-card-title" onClick={onEdit} type="button" disabled={!canEdit}>{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div><div className="deals-card-indicators"><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span><DealAttention deal={deal} todayIso={todayIso} /></div></div>
     {(company || primaryContact) && <div className="deals-card-relations">{company && <p>{company}</p>}{primaryContact && <p>Contact: {primaryContact}</p>}</div>}
     <div className="deals-card-value"><strong>{money(Number(deal.amount), deal.currency)}</strong><span>{deal.probability}% likely</span></div>
-    <div className="deals-card-meta"><span>{shortDate(deal.expected_close_date)}</span><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></div>
+    <div className="deals-card-meta"><span>{shortDate(deal.expected_close_date, dateFormat)}</span><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></div>
     <label className="deals-move-control">Move to<select aria-label={`Move ${deal.title} to stage`} disabled={!canEdit || moving || deal.status !== "open"} onChange={(event) => { if (event.target.value) onMove(event.target.value); event.target.value = ""; }} value=""><option value="">Choose stage…</option>{moveOptions.filter(({ id }) => id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></label>
   </article>;
 }
 
-export function DealsWorkspace({ data, canCreate, canEditOwn, canEditAll, canReassign, currentUserId, search, ownerFilter, todayIso, view, createIntent }: Props) {
+export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEditAll, canReassign, currentUserId, search, ownerFilter, todayIso, view, createIntent }: Props) {
+  const dateFormat = useDateFormat();
   const router = useRouter();
   const [deals, setDeals] = useState(data.deals);
   const [formDeal, setFormDeal] = useState<DealRow | null | undefined>(createIntent && canCreate ? null : undefined);
@@ -167,7 +172,7 @@ export function DealsWorkspace({ data, canCreate, canEditOwn, canEditAll, canRea
   const tableDeals = deals.filter((deal) => stages.some((stage) => stage.id === deal.stage_id));
 
   return <div className="page-container deals-page">
-    <header className="deals-header"><div><h1 className="page-title">Deals</h1><p className="page-description">Move active opportunities through your sales pipeline.</p></div><div className="deals-header-actions"><button className="deals-button deals-button-primary" disabled={!canCreate || !data.pipelineId || !stages.some(({ stage_type }) => stage_type === "open")} onClick={() => setFormDeal(null)} type="button"><Plus size={16} /> Add Deal</button></div></header>
+    <header className="deals-header"><div><h1 className="page-title">Deals</h1><p className="page-description">Move active opportunities through your sales pipeline.</p></div><div className="deals-header-actions">{canExport && <a className="deals-button deals-button-secondary" href={exportHref(data.pipelineId, search, ownerFilter)}><Download aria-hidden="true" size={15} /> Export CSV</a>}<button className="deals-button deals-button-primary" disabled={!canCreate || !data.pipelineId || !stages.some(({ stage_type }) => stage_type === "open")} onClick={() => setFormDeal(null)} type="button"><Plus size={16} /> Add Deal</button></div></header>
     <form action="/app/deals" className="deals-toolbar" method="get">
       <label className="deals-search"><span className="sr-only">Search deals</span><input defaultValue={search} maxLength={100} name="q" placeholder="Search deals by name…" /><button aria-label="Search deals" className="deals-search-submit" type="submit"><Search size={15} /></button></label>
       <label className="deals-filter"><span>Pipeline</span><select defaultValue={data.pipelineId} name="pipeline" onChange={(event) => event.currentTarget.form?.requestSubmit()}>{data.pipelines.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></label>
@@ -183,11 +188,19 @@ export function DealsWorkspace({ data, canCreate, canEditOwn, canEditAll, canRea
 
         <div className="deals-stage-cards">{stage.deals.length ? stage.deals.map((deal) => <DealCard canEdit={canEdit(deal) && stage.stage_type === "open"} data={data} deal={deal} key={deal.id} moving={pendingIds.has(deal.id)} todayIso={todayIso} onEdit={() => editDeal(deal)} onMove={(stageId) => move(deal.id, stageId)} onDrag={setDragDeal} stages={stages} />) : <p className="deals-stage-empty">No deals in this stage</p>}</div>
       </div>)}
-    </section> : <section aria-label="Deals list" className="deals-list-wrap"><table className="deals-list"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Primary contact</th><th scope="col">Stage</th><th scope="col">Value</th><th scope="col">Close date</th><th scope="col">Owner</th><th scope="col">Priority</th><th scope="col">Next stage</th></tr></thead><tbody>{tableDeals.map((deal) => <tr key={deal.id}><th scope="row"><div className="deals-list-name-actions"><button className="deals-list-edit" disabled={!canEdit(deal) || deal.status !== "open"} onClick={() => editDeal(deal)} type="button">{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div></th><td>{deal.company?.name ?? "—"}</td><td>{deal.contact?.name ?? "—"}</td><td>{stages.find(({ id }) => id === deal.stage_id)?.name ?? "—"}</td><td>{money(Number(deal.amount), deal.currency)}</td><td><span>{shortDate(deal.expected_close_date)}</span><DealAttention deal={deal} todayIso={todayIso} /></td><td><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></td><td><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span></td><td><label className="sr-only" htmlFor={`list-move-${deal.id}`}>Move {deal.title} to stage</label><select disabled={!canEdit(deal) || pendingIds.has(deal.id) || deal.status !== "open"} id={`list-move-${deal.id}`} onChange={(event) => { if (event.target.value) move(deal.id, event.target.value); event.target.value = ""; }} value=""><option value="">Choose…</option>{stages.filter(({ stage_type, id }) => stage_type === "open" && id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></td></tr>)}</tbody></table></section>}
+    </section> : <section aria-label="Deals list" className="deals-list-wrap"><table className="deals-list"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Primary contact</th><th scope="col">Stage</th><th scope="col">Value</th><th scope="col">Close date</th><th scope="col">Owner</th><th scope="col">Priority</th><th scope="col">Next stage</th></tr></thead><tbody>{tableDeals.map((deal) => <tr key={deal.id}><th scope="row"><div className="deals-list-name-actions"><button className="deals-list-edit" disabled={!canEdit(deal) || deal.status !== "open"} onClick={() => editDeal(deal)} type="button">{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div></th><td>{deal.company?.name ?? "—"}</td><td>{deal.contact?.name ?? "—"}</td><td>{stages.find(({ id }) => id === deal.stage_id)?.name ?? "—"}</td><td>{money(Number(deal.amount), deal.currency)}</td><td><span>{shortDate(deal.expected_close_date, dateFormat)}</span><DealAttention deal={deal} todayIso={todayIso} /></td><td><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></td><td><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span></td><td><label className="sr-only" htmlFor={`list-move-${deal.id}`}>Move {deal.title} to stage</label><select disabled={!canEdit(deal) || pendingIds.has(deal.id) || deal.status !== "open"} id={`list-move-${deal.id}`} onChange={(event) => { if (event.target.value) move(deal.id, event.target.value); event.target.value = ""; }} value=""><option value="">Choose…</option>{stages.filter(({ stage_type, id }) => stage_type === "open" && id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></td></tr>)}</tbody></table></section>}
 
     <section aria-label="Pipeline summary" className="deals-summary"><span><strong>{deals.length}</strong> {deals.length === 1 ? "deal" : "deals"}</span><span><strong>{moneyByCurrency(deals.filter(({ status }) => status === "open"))}</strong> open value</span><span><strong>{moneyByCurrency(deals.filter(({ status }) => status === "open"), true)}</strong> weighted pipeline</span></section>
     {formDeal !== undefined && <DealForm canReassign={canReassign} currentUserId={currentUserId} data={data} deal={formDeal} onClose={() => setFormDeal(undefined)} />}
   </div>;
+}
+
+function exportHref(pipeline: string, q: string, owner: string) {
+  const params = new URLSearchParams();
+  if (pipeline) params.set("pipeline", pipeline);
+  if (q) params.set("q", q);
+  if (owner) params.set("owner", owner);
+  return `/app/deals/export?${params.toString()}`;
 }
 
 function viewHref(view: "board" | "list", pipeline: string, q: string, owner: string) {

@@ -1,7 +1,7 @@
 import "server-only";
 
-import { buildContactSearchFilter, contactPageSize, escapeContactSearchTerm } from "@/lib/contacts/schema";
-import type { ContactSearchParams } from "@/lib/contacts/schema";
+import { buildContactSearchFilter, contactPageSize, contactSortOrder, escapeContactSearchTerm, parsePersistedContactView } from "@/lib/contacts/schema";
+import type { ContactSearchParams, ContactViewSort, ContactViewColumn } from "@/lib/contacts/schema";
 
 export type ContactOwner = { id: string; label: string };
 export type ContactCompany = { id: string; name: string; industry: string | null; employee_size: number | null; description: string | null; archived_at: string | null };
@@ -37,7 +37,7 @@ export async function listWorkspaceContacts(
   if (companyIds.error) throw new Error("Unable to search workspace companies.");
   let recordsQuery = supabase.from("contacts")
     .select("id, workspace_id, company_id, first_name, last_name, email, phone, job_title, linkedin_url, owner_id, lifecycle_status, created_at, updated_at, companies(id, name, industry, employee_size, description, archived_at)", { count: "exact" })
-    .eq("workspace_id", workspaceId).is("archived_at", null).order("updated_at", { ascending: false }).range(start, start + contactPageSize - 1);
+    .eq("workspace_id", workspaceId).is("archived_at", null);
   if (params.lifecycle !== "all") recordsQuery = recordsQuery.eq("lifecycle_status", params.lifecycle);
   if (params.companyId) recordsQuery = recordsQuery.eq("company_id", params.companyId);
   if (params.ownerId === "unassigned") recordsQuery = recordsQuery.is("owner_id", null);
@@ -46,6 +46,8 @@ export async function listWorkspaceContacts(
   const companyFilter = companyIds.data?.length ? `company_id.in.(${companyIds.data.map(({ id }) => id).join(",")})` : null;
   const searchFilters = [searchFilter, companyFilter].filter(Boolean);
   if (searchFilters.length) recordsQuery = recordsQuery.or(searchFilters.join(","));
+  for (const order of contactSortOrder(params.sort)) recordsQuery = recordsQuery.order(order.column, { ascending: order.ascending });
+  recordsQuery = recordsQuery.range(start, start + contactPageSize - 1);
 
   const [records, total, active, customer, companiesResult, ownerResult] = await Promise.all([
     recordsQuery,
@@ -96,6 +98,25 @@ export async function listWorkspaceContacts(
     companies: companiesResult.data as ContactCompany[],
     owners,
   };
+}
+
+export type ContactSavedView = {
+  id: string;
+  name: string;
+  filters: Pick<ContactSearchParams, "q" | "lifecycle" | "companyId" | "ownerId">;
+  sort: ContactViewSort;
+  visibleColumns: ContactViewColumn[];
+};
+
+export async function listContactSavedViews(supabase: Supabase, workspaceId: string, userId: string): Promise<ContactSavedView[]> {
+  const { data, error } = await supabase.from("saved_views")
+    .select("id, name, filters, sort, visible_columns")
+    .eq("workspace_id", workspaceId).eq("user_id", userId).eq("entity_type", "contacts").order("name");
+  if (error) throw new Error("Unable to load saved contact views.");
+  return (data ?? []).flatMap((row) => {
+    const parsed = parsePersistedContactView(row);
+    return parsed ? [{ id: row.id, name: row.name, ...parsed }] : [];
+  });
 }
 
 export async function getContact(supabase: Supabase, workspaceId: string, id: string) {

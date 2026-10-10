@@ -22,6 +22,7 @@ function viewForm() {
   form.set("status", "qualified");
   form.set("sourceId", "");
   form.set("ownerId", "unassigned");
+  form.set("tagId", "");
   form.set("sort", "value_desc");
   form.append("visibleColumns", "name");
   form.append("visibleColumns", "value");
@@ -47,7 +48,7 @@ describe("saved lead view actions", () => {
       user_id: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2",
       entity_type: "leads",
       name: "Qualified this week",
-      filters: { q: "Acme", status: "qualified", sourceId: "", ownerId: "unassigned" },
+      filters: { q: "Acme", status: "qualified", sourceId: "", ownerId: "unassigned", tagId: "" },
       sort: "value_desc",
       visible_columns: ["name", "value"],
     });

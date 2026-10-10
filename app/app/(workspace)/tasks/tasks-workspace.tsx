@@ -7,6 +7,8 @@ import { CalendarDays, Check, Plus } from "lucide-react";
 import { completeTaskAction, createTaskAction, rescheduleTaskAction, type TaskActionState } from "./actions";
 import { taskPageSize, taskTypes, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { TaskOption, TaskOwner, TaskRow } from "@/lib/tasks/repository";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
 
 const blankState: TaskActionState = {};
 const viewLabels = { my: "My Tasks", today: "Today", upcoming: "Upcoming", overdue: "Overdue", completed: "Completed" } as const;
@@ -14,26 +16,27 @@ const typeLabels: Record<string, string> = { call: "Call", email: "Email", meeti
 const priorityLabels = { low: "Low", medium: "Medium", high: "High" } as const;
 const relationLabels = { company: "Company", contact: "Contact", lead: "Lead", deal: "Deal" } as const;
 
-export function TasksWorkspace({ tasks, owners, options, matchedCount, params, canCreate, canEdit, canReassign, currentUserId }: {
+export function TasksWorkspace({ tasks, owners, options, matchedCount, params, canCreate, canEdit, canReassign, canExport, currentUserId }: {
   tasks: TaskRow[]; owners: TaskOwner[]; options: TaskOption[]; matchedCount: number; params: TaskSearchParams;
-  canCreate: boolean; canEdit: boolean; canReassign: boolean; currentUserId: string;
+  canCreate: boolean; canEdit: boolean; canReassign: boolean; canExport: boolean; currentUserId: string;
 }) {
+  const dateFormat = useDateFormat();
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reschedulingTask, setReschedulingTask] = useState<TaskRow | null>(null);
   const pageCount = Math.max(1, Math.ceil(matchedCount / taskPageSize));
-  const { view, q, type, priority, page, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset } = params;
+  const { view, q, type, priority, sort, page, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset } = params;
   useEffect(() => {
     const now = new Date();
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const timezoneOffset = now.getTimezoneOffset();
     const tomorrowTimezoneOffset = tomorrow.getTimezoneOffset();
     if (currentTimezoneOffset !== timezoneOffset || currentTomorrowTimezoneOffset !== tomorrowTimezoneOffset) {
-      router.replace(tasksHref({ view, q, type, priority, page, timezoneOffset, tomorrowTimezoneOffset }));
+      router.replace(tasksHref({ view, q, type, priority, sort, page, timezoneOffset, tomorrowTimezoneOffset }));
     }
-  }, [view, q, type, priority, page, currentTimezoneOffset, currentTomorrowTimezoneOffset, router]);
+  }, [view, q, type, priority, sort, page, currentTimezoneOffset, currentTomorrowTimezoneOffset, router]);
 
   function complete(id: string) {
     setPendingId(id); setNotice("");
@@ -55,14 +58,16 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
         <label className="tasks-search"><span className="sr-only">Search tasks</span><input autoComplete="off" defaultValue={params.q} maxLength={100} name="q" placeholder="Search task title or description" type="search" /></label>
         <label className="tasks-filter"><span className="sr-only">Filter by type</span><select aria-label="Filter by type" defaultValue={params.type} name="type"><option value="all">All types</option>{taskTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select></label>
         <label className="tasks-filter"><span className="sr-only">Filter by priority</span><select aria-label="Filter by priority" defaultValue={params.priority} name="priority"><option value="all">All priorities</option>{Object.entries(priorityLabels).map(([priority, label]) => <option key={priority} value={priority}>{label}</option>)}</select></label>
+        <label className="tasks-filter"><span className="sr-only">Sort tasks</span><select aria-label="Sort tasks" defaultValue={params.sort} name="sort"><option value="due_date">Due date (earliest first)</option><option value="title">Title (A–Z)</option></select></label>
         <button className="tasks-secondary-button" type="submit">Apply filters</button>
+         {canExport && <button className="tasks-secondary-button" formAction="/app/tasks/export" formMethod="get" type="submit">Export CSV</button>}
       </form>
       <div className="tasks-table-wrap"><table className="tasks-table"><thead><tr><th scope="col">Type</th><th scope="col">Task title</th><th scope="col">Related to</th><th scope="col">Due date</th><th scope="col">Assignee</th><th scope="col">Priority</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{tasks.map((task) => <tr key={task.id}>
           <td data-label="Type">{typeLabels[task.task_type] ?? task.task_type}</td>
           <th data-label="Task title" scope="row"><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</th>
           <td data-label="Related to">{task.relation ? <Link href={relationHref(task.relation.type, task.relation.id)}>{task.relation.label}</Link> : task.related_entity_id ? <span className="tasks-muted">Related record unavailable</span> : <span className="tasks-muted">No linked record</span>}</td>
-          <td data-label="Due date">{task.due_at ? <time dateTime={task.due_at}>{formatDueDate(task.due_at)}</time> : <span className="tasks-muted">No due date</span>}</td>
+          <td data-label="Due date">{task.due_at ? <time dateTime={task.due_at}>{formatDueDate(task.due_at, dateFormat)}</time> : <span className="tasks-muted">No due date</span>}</td>
           <td data-label="Assignee">{task.assigned_to ? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>
           <td data-label="Priority"><span className={`tasks-priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span></td>
           <td data-label="Status"><span className={`tasks-status status-${task.status}`}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span></td>
@@ -169,11 +174,11 @@ function localDateTimeValue(dateTime: string | Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function formatDueDate(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }
+function formatDueDate(value: string, dateFormat: DateFormat) { return formatCalendarDateTime(value, dateFormat); }
 function relationHref(type: TaskRow["related_entity_type"] & string, id: string) {
   if (type === "lead") return `/app/leads/${id}`;
   const section = type === "company" ? "companies" : type === "contact" ? "contacts" : "deals";
   return `/app/${section}/${id}`;
 }
 function hasFilters(params: TaskSearchParams) { return Boolean(params.q || params.priority !== "all" || params.type !== "all"); }
-function tasksHref(params: TaskSearchParams) { const query = new URLSearchParams(); if (params.view !== "my") query.set("view", params.view); if (params.q) query.set("q", params.q); if (params.type !== "all") query.set("type", params.type); if (params.priority !== "all") query.set("priority", params.priority); if (params.timezoneOffset !== 0 || params.tomorrowTimezoneOffset !== 0) { query.set("timezoneOffset", String(params.timezoneOffset)); query.set("tomorrowTimezoneOffset", String(params.tomorrowTimezoneOffset)); } if (params.page > 1) query.set("page", String(params.page)); const value = query.toString(); return `/app/tasks${value ? `?${value}` : ""}`; }
+function tasksHref(params: TaskSearchParams) { const query = new URLSearchParams(); if (params.view !== "my") query.set("view", params.view); if (params.q) query.set("q", params.q); if (params.type !== "all") query.set("type", params.type); if (params.priority !== "all") query.set("priority", params.priority); if (params.sort !== "due_date") query.set("sort", params.sort); if (params.timezoneOffset !== 0 || params.tomorrowTimezoneOffset !== 0) { query.set("timezoneOffset", String(params.timezoneOffset)); query.set("tomorrowTimezoneOffset", String(params.tomorrowTimezoneOffset)); } if (params.page > 1) query.set("page", String(params.page)); const value = query.toString(); return `/app/tasks${value ? `?${value}` : ""}`; }

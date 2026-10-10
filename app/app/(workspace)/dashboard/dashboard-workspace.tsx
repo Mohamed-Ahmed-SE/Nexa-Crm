@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { Activity, AlertCircle, ArrowDownUp, CalendarDays, CheckCircle2, CircleDollarSign, Download, Layers3, List, Plus, Search, UsersRound } from "lucide-react";
 import { shapeWorkspaceDashboard } from "@/lib/dashboard/presentation";
 import type { DashboardDeal, DashboardSummary, WorkspaceDashboardData } from "@/lib/dashboard/types";
+import { formatCalendarDate, formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
+import { useDateFormat } from "@/components/auth/date-format-provider";
 import styles from "./dashboard-workspace.module.css";
 
 type Props =
@@ -20,12 +22,11 @@ function money(amount: number, currency: string) {
     return `${currency} ${Math.round(amount).toLocaleString()}`;
   }
 }
-function date(dateValue: string | null) {
-  if (!dateValue) return "No close date";
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${dateValue.slice(0, 10)}T00:00:00Z`));
+function date(dateValue: string | null, dateFormat: DateFormat) {
+  return dateValue ? formatCalendarDate(dateValue.slice(0, 10), dateFormat) : "No close date";
 }
-function ago(occurredAt: string, timeZone: string) {
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone }).format(new Date(occurredAt));
+function ago(occurredAt: string, timeZone: string, dateFormat: DateFormat) {
+  return formatCalendarDateTime(occurredAt, dateFormat, timeZone);
 }
 function exportCsv(rows: DashboardDeal[]) {
   const cell = (fieldValue: unknown) => {
@@ -60,15 +61,16 @@ function UnavailableDashboard() {
 
 type DashboardPageProps = { dashboard: WorkspaceDashboardData; canCreate: boolean };
 function DashboardPage({ dashboard, canCreate }: DashboardPageProps) {
+  const dateFormat = useDateFormat();
   const summary = shapeWorkspaceDashboard(dashboard);
   const period = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: dashboard.timeZone }).format(new Date(`${dashboard.today}T12:00:00Z`));
   return <main className={styles.page}>
     <header className={styles.header}>
       <div><h1>Sales Dashboard</h1><p>Workspace activity and sales work, in one place.</p></div>
-      <div className={styles.dateContext}><CalendarDays aria-hidden="true" size={16} /><span>{period}</span><span className={styles.today}>Updated {date(dashboard.today)}</span></div>
+      <div className={styles.dateContext}><CalendarDays aria-hidden="true" size={16} /><span>{period}</span><span className={styles.today}>Updated {date(dashboard.today, dateFormat)}</span></div>
     </header>
     <DashboardMetrics summary={summary} currency={dashboard.currency} />
-    <DashboardDealsPanel dashboard={dashboard} canCreate={canCreate} />
+    <DashboardDealsPanel dashboard={dashboard} canCreate={canCreate} dateFormat={dateFormat} />
     <DashboardSupporting dashboard={dashboard} summary={summary} />
   </main>;
 }
@@ -84,8 +86,8 @@ function DashboardMetrics({ summary, currency }: DashboardMetricsProps) {
   </section>;
 }
 
-type DashboardDealsPanelProps = { dashboard: WorkspaceDashboardData; canCreate: boolean };
-function DashboardDealsPanel({ dashboard, canCreate }: DashboardDealsPanelProps) {
+type DashboardDealsPanelProps = { dashboard: WorkspaceDashboardData; canCreate: boolean; dateFormat: DateFormat };
+function DashboardDealsPanel({ dashboard, canCreate, dateFormat }: DashboardDealsPanelProps) {
   const [view, setView] = useState<View>("table");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("open");
@@ -108,23 +110,24 @@ function DashboardDealsPanel({ dashboard, canCreate }: DashboardDealsPanelProps)
       </div>
     </div>
     <div className={styles.searchRow}><label><Search aria-hidden="true" size={16} /><span className={styles.srOnly}>Search deals</span><input aria-label="Search deals" onChange={(event) => setQuery(event.target.value)} placeholder="Search deals, companies, contacts…" value={query} /></label><span>{visibleDeals.length} shown</span></div>
-    <DashboardDealResults dashboard={dashboard} deals={visibleDeals} canCreate={canCreate} view={view} />
+    <DashboardDealResults dashboard={dashboard} deals={visibleDeals} canCreate={canCreate} view={view} dateFormat={dateFormat} />
   </section>;
 }
 
-type DashboardDealResultsProps = { dashboard: WorkspaceDashboardData; deals: DashboardDeal[]; canCreate: boolean; view: View };
-function DashboardDealResults({ dashboard, deals, canCreate, view }: DashboardDealResultsProps) {
+type DashboardDealResultsProps = { dashboard: WorkspaceDashboardData; deals: DashboardDeal[]; canCreate: boolean; view: View; dateFormat: DateFormat };
+function DashboardDealResults({ dashboard, deals, canCreate, view, dateFormat }: DashboardDealResultsProps) {
   if (deals.length === 0) return <div className={styles.empty}><Layers3 aria-hidden="true" size={20} /><h3>{dashboard.deals.length ? "No deals match these filters" : "No deals in this workspace yet"}</h3><p>{dashboard.deals.length ? "Try another search or status filter." : "Deals created in this workspace will appear here."}</p>{canCreate && !dashboard.deals.length && <Link href="/app/deals?create=1">Add your first deal</Link>}</div>;
-  if (view === "table") return <div className={styles.tableScroll}><table><thead><tr><th>Deal</th><th>Company / contact</th><th>Stage</th><th>Value</th><th>Owner</th><th>Expected close</th><th>Status</th></tr></thead><tbody>{deals.map((deal) => <tr key={deal.id}><td><Link className={styles.dealName} href={`/app/deals/${deal.id}`}>{deal.title}</Link></td><td>{deal.company ?? "—"}<small>{deal.contact ?? "No primary contact"}</small></td><td><span className={`${styles.stage} ${styles[`stage_${deal.stageType}`]}`}>{deal.stage}</span></td><td className={styles.amount}>{money(deal.amount, deal.currency)}</td><td>{deal.owner}</td><td>{date(deal.expectedCloseDate)}</td><td><span className={`${styles.status} ${styles[`status_${deal.status}`]}`}>{deal.status}</span></td></tr>)}</tbody></table></div>;
+  if (view === "table") return <div className={styles.tableScroll}><table><thead><tr><th>Deal</th><th>Company / contact</th><th>Stage</th><th>Value</th><th>Owner</th><th>Expected close</th><th>Status</th></tr></thead><tbody>{deals.map((deal) => <tr key={deal.id}><td><Link className={styles.dealName} href={`/app/deals/${deal.id}`}>{deal.title}</Link></td><td>{deal.company ?? "—"}<small>{deal.contact ?? "No primary contact"}</small></td><td><span className={`${styles.stage} ${styles[`stage_${deal.stageType}`]}`}>{deal.stage}</span></td><td className={styles.amount}>{money(deal.amount, deal.currency)}</td><td>{deal.owner}</td><td>{date(deal.expectedCloseDate, dateFormat)}</td><td><span className={`${styles.status} ${styles[`status_${deal.status}`]}`}>{deal.status}</span></td></tr>)}</tbody></table></div>;
   return <div className={styles.pipelineBoard}>{dashboard.stages.map((stage) => { const stageDeals = deals.filter((deal) => deal.stageId === stage.id); return <section className={styles.pipelineColumn} key={stage.id}><header><h3>{stage.pipelineName} · {stage.name}</h3><span>{stageDeals.length}</span></header>{stageDeals.length ? stageDeals.map((deal) => <Link className={styles.pipelineDeal} href={`/app/deals/${deal.id}`} key={deal.id}><strong>{deal.title}</strong><span>{deal.company ?? "No company"}</span><b>{money(deal.amount, deal.currency)}</b></Link>) : <p className={styles.columnEmpty}>No deals</p>}</section>; })}</div>;
 }
 
 type DashboardSupportingProps = { dashboard: WorkspaceDashboardData; summary: DashboardSummary };
 function DashboardSupporting({ dashboard, summary }: DashboardSupportingProps) {
+  const dateFormat = useDateFormat();
   return <section className={styles.supporting} aria-label="Supporting workspace details">
     <section className={styles.widget} aria-labelledby="pipeline-heading"><WidgetHeading id="pipeline-heading" title="Pipeline by stage" href="/app/deals" /><ul className={styles.stageList}>{summary.pipelineByStage.length ? summary.pipelineByStage.map((stage) => <li key={stage.id}><span><i aria-hidden="true" />{stage.pipelineName} · {stage.name}</span><span>{stage.count} <b>{money(stage.value, dashboard.currency)}</b></span></li>) : <li className={styles.widgetEmpty}>No active pipeline stages.</li>}</ul></section>
     <section className={styles.widget} aria-labelledby="source-heading"><WidgetHeading id="source-heading" title="Deals by source" href="/app/deals" /><ul className={styles.sourceList}>{summary.dealsBySource.length ? summary.dealsBySource.slice(0, 5).map((source) => <li key={source.name}><span>{source.name}</span><span>{source.count} {source.count === 1 ? "deal" : "deals"}</span></li>) : <li className={styles.widgetEmpty}>Sources will appear as deals are added.</li>}</ul></section>
-    <section className={styles.widget} aria-labelledby="activity-heading"><WidgetHeading id="activity-heading" title="Recent activity" href="/app/notifications" /><ul className={styles.activityList}>{dashboard.activities.length ? dashboard.activities.map((activity) => <li key={activity.id}><Activity aria-hidden="true" size={16} /><div><p>{activity.subject}{activity.relatedTo && <> · <Link href={activity.relatedHref ?? "/app/deals"}>{activity.relatedTo}</Link></>}</p><time dateTime={activity.occurredAt}>{ago(activity.occurredAt, dashboard.timeZone)}</time></div></li>) : <li className={styles.widgetEmpty}>Activity will appear here when your team records it.</li>}</ul></section>
+    <section className={styles.widget} aria-labelledby="activity-heading"><WidgetHeading id="activity-heading" title="Recent activity" href="/app/notifications" /><ul className={styles.activityList}>{dashboard.activities.length ? dashboard.activities.map((activity) => <li key={activity.id}><Activity aria-hidden="true" size={16} /><div><p>{activity.subject}{activity.relatedTo && <> · <Link href={activity.relatedHref ?? "/app/deals"}>{activity.relatedTo}</Link></>}</p><time dateTime={activity.occurredAt}>{ago(activity.occurredAt, dashboard.timeZone, dateFormat)}</time></div></li>) : <li className={styles.widgetEmpty}>Activity will appear here when your team records it.</li>}</ul></section>
     <section className={styles.widget} aria-labelledby="tasks-heading"><WidgetHeading id="tasks-heading" title="Tasks due today" href="/app/tasks?view=today" /><ul className={styles.taskList}>{summary.tasksToday.length ? summary.tasksToday.slice(0, 6).map((task) => <li key={task.id}><span className={styles.taskDot} aria-hidden="true" /><div><Link href={task.relatedHref ?? "/app/tasks"}>{task.title}</Link><small>{task.relatedTo ?? "No related record"}</small></div><time dateTime={task.dueAt}>{new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone: dashboard.timeZone }).format(new Date(task.dueAt))}</time></li>) : <li className={styles.widgetEmpty}>No open tasks are due today.</li>}</ul></section>
     <section className={styles.widget} aria-labelledby="attention-heading"><WidgetHeading id="attention-heading" title="Deals needing attention" href="/app/deals" /><ul className={styles.attentionList}>{summary.attentionDeals.length ? summary.attentionDeals.map(({ deal, reason }) => <li key={deal.id}><AlertCircle aria-hidden="true" size={16} /><div><Link href={`/app/deals/${deal.id}`}>{deal.title}</Link><small>{reason}</small></div><span>{money(deal.amount, deal.currency)}</span></li>) : <li className={styles.widgetEmpty}>No open deals currently meet the attention rules.</li>}</ul></section>
   </section>;

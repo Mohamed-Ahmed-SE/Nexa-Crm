@@ -49,6 +49,6 @@ select throws_ok(
   '42501', null, 'foreign workspace member cannot create a job for another workspace'
 );
 reset role;
-select is((select row_errors #>> '{0,row}' from public.crm_import_jobs limit 1), '4', 'history contains row numbers and errors rather than imported raw data');
+select is((select row_errors #>> '{0,row}' from public.crm_import_jobs where workspace_id = 'c1200000-0000-4000-8000-000000000001' and created_by = 'c1100000-0000-4000-8000-000000000001'), '4', 'history contains row numbers and errors rather than imported raw data');
 select * from finish();
 rollback;

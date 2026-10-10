@@ -7,13 +7,15 @@ const workspace = { id: "workspace-1", name: "Acme" };
 
 describe("server-derived workspace context", () => {
   it("derives identity and role from the matching active membership", () => {
-    expect(deriveWorkspaceContext(user, member, workspace, { full_name: " Alex Chen " })).toEqual({
+    expect(deriveWorkspaceContext(user, member, workspace, { full_name: " Alex Chen ", date_format: null, avatar_url: "https://images.example.com/alex.png" })).toEqual({
       userId: "user-1",
       email: "alex@example.com",
       fullName: "Alex Chen",
       workspaceId: "workspace-1",
       workspaceName: "Acme",
       role: "admin",
+      dateFormat: "MM/DD/YYYY",
+      avatarUrl: "https://images.example.com/alex.png",
     });
   });
 

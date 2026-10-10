@@ -11,6 +11,8 @@ import {
 import type { InviteActionState, MemberActionState } from "@/lib/auth/member-actions";
 import { updateWorkspaceMember } from "@/lib/auth/member-actions";
 import { workspaceRoles, type WorkspaceRole } from "@/lib/auth/permissions";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDate, type DateFormat } from "@/lib/preferences/date-format";
 
 export type WorkspaceMemberRow = {
   member_id: string;
@@ -36,8 +38,8 @@ export type WorkspaceInviteRow = {
 const initialMemberState: MemberActionState = { message: "" };
 const initialInviteState: InviteActionState = { message: "" };
 
-function formatDate(date: string): string {
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(date));
+function formatDate(date: string, dateFormat: DateFormat): string {
+  return formatCalendarDate(date, dateFormat, { timeZone: "UTC" });
 }
 
 function inviteStatus(invite: WorkspaceInviteRow): string {
@@ -159,6 +161,7 @@ export function WorkspaceAccessManager({
   invites: WorkspaceInviteRow[];
   currentUserId: string;
 }) {
+  const dateFormat = useDateFormat();
   return (
     <div className="workspace-access">
       <section aria-labelledby="invite-title" className="access-panel">
@@ -181,7 +184,7 @@ export function WorkspaceAccessManager({
                   <td><strong>{member.full_name || member.email}</strong><span className="access-secondary">{member.email}</span></td>
                   <td>{member.role}</td>
                   <td><span className={`access-status access-status-${member.status}`}>{member.status}</span></td>
-                  <td><time dateTime={member.joined_at}>{formatDate(member.joined_at)}</time></td>
+                  <td><time dateTime={member.joined_at}>{formatDate(member.joined_at, dateFormat)}</time></td>
                   <td>{member.user_id === currentUserId ? <span className="access-secondary">You</span> : (
                     <div className="access-controls">
                       <MemberChangeForm change="role" member={member} />
@@ -202,14 +205,16 @@ export function WorkspaceAccessManager({
         {invites.length ? (
           <div className="deal-table-scroll">
             <table className="deal-table access-table">
-              <thead><tr><th scope="col">Invited email</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Expires</th><th scope="col">Action</th></tr></thead>
+              <thead><tr><th scope="col">Invited email</th><th scope="col">Invited</th><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Expires</th><th scope="col">Action</th></tr></thead>
               <tbody>{invites.map((invite) => {
                 const status = inviteStatus(invite);
                 return (
                   <tr key={invite.invite_id}>
-                    <td>{invite.email}</td><td>{invite.role}</td>
+                    <td>{invite.email}</td>
+                    <td><time dateTime={invite.created_at}>{formatDate(invite.created_at, dateFormat)}</time></td>
+                    <td>{invite.role}</td>
                     <td><span className={`access-status access-status-${status.toLowerCase()}`}>{status}</span></td>
-                    <td><time dateTime={invite.expires_at}>{formatDate(invite.expires_at)}</time></td>
+                    <td><time dateTime={invite.expires_at}>{formatDate(invite.expires_at, dateFormat)}</time></td>
                     <td>{status === "Pending" || status === "Expired" ? <InviteRevokeForm inviteId={invite.invite_id} /> : <span className="access-secondary">—</span>}</td>
                   </tr>
                 );

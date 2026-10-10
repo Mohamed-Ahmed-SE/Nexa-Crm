@@ -58,10 +58,10 @@ export function LeadConversionDialog({ lead, currency, options, owners, currentU
     });
   }
 
-  return <dialog aria-labelledby="lead-conversion-title" className="leads-conversion-dialog" onCancel={(event) => { if (pending) event.preventDefault(); }} onClose={onClose} ref={dialogRef}>
+  return <dialog aria-labelledby="lead-conversion-title" className="leads-conversion-dialog" onCancel={(event) => { event.preventDefault(); if (!pending) { dialogRef.current?.close(); onClose(); } }} ref={dialogRef}>
     <header className="leads-conversion-header">
       <div><h2 id="lead-conversion-title">Convert {lead.full_name}</h2><p>Choose which records to create. The lead and its history will be retained.</p></div>
-      <button aria-label="Close conversion" className="leads-icon-button" disabled={pending} onClick={() => dialogRef.current?.close()} type="button"><X size={17} /></button>
+      <button aria-label="Close conversion" className="leads-icon-button" disabled={pending} onClick={() => { dialogRef.current?.close(); onClose(); }} type="button"><X size={17} /></button>
     </header>
     <form action={submit} className="leads-conversion-form">
       <fieldset className="leads-conversion-choices">
@@ -86,7 +86,7 @@ export function LeadConversionDialog({ lead, currency, options, owners, currentU
       </div>}
       <p aria-live="polite" className="leads-form-message" role={error ? "alert" : undefined}>{error}</p>
       <footer className="leads-form-footer">
-        <button className="leads-secondary-button" disabled={pending} onClick={() => dialogRef.current?.close()} type="button">Cancel</button>
+        <button className="leads-secondary-button" disabled={pending} onClick={() => { dialogRef.current?.close(); onClose(); }} type="button">Cancel</button>
         <button className="leads-primary-button" disabled={pending} type="submit">{pending ? "Converting…" : "Convert lead"}</button>
       </footer>
     </form>

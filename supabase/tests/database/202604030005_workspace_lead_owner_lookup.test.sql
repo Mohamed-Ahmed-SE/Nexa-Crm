@@ -56,11 +56,12 @@ select is(
   (select count(*)::integer from public.list_reassignable_workspace_members('52000000-0000-4000-8000-000000000001', '51000000-0000-4000-8000-000000000004', '53000000-0000-4000-8000-000000000002')),
   0, 'an inactive owner cannot be assigned to a different lead'
 );
+update public.leads set owner_id = '51000000-0000-4000-8000-000000000002'
+where id = '53000000-0000-4000-8000-000000000002';
 select is(
-  (with changed as (
-    update public.leads set owner_id = '51000000-0000-4000-8000-000000000002'
-    where id = '53000000-0000-4000-8000-000000000002' returning 1
-  ) select count(*)::integer from changed),
+  (select count(*)::integer from public.leads
+   where id = '53000000-0000-4000-8000-000000000002'
+     and owner_id = '51000000-0000-4000-8000-000000000002'),
   1, 'manager can reassign a lead to an active workspace member'
 );
 select throws_ok(

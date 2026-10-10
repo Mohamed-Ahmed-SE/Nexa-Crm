@@ -71,7 +71,7 @@ select throws_ok(
 );
 select throws_ok(
   $$insert into public.tasks (workspace_id, title, assigned_to, created_by, related_entity_type, related_entity_id) values ('62000000-0000-4000-8000-000000000002', 'Cross-workspace task', '61000000-0000-4000-8000-000000000004', '61000000-0000-4000-8000-000000000002', 'contact', '63000000-0000-4000-8000-000000000003')$$,
-  '42501', 'new row violates row-level security policy for table "tasks"', 'member cannot write an engagement record into another workspace'
+  '23503', 'Related contact must exist in the record workspace', 'member cannot write an engagement record into another workspace'
 );
 insert into public.activities (workspace_id, activity_type, created_by, related_entity_type, related_entity_id)
 values ('62000000-0000-4000-8000-000000000001', 'call', '61000000-0000-4000-8000-000000000002', 'contact', '63000000-0000-4000-8000-000000000001');
@@ -117,7 +117,7 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '61000000-0000-4000-8000-000000000004', true);
 select throws_ok(
   $$insert into public.notes (workspace_id, body, created_by, related_entity_type, related_entity_id) values ('62000000-0000-4000-8000-000000000001', 'Cross workspace spoof', '61000000-0000-4000-8000-000000000004', 'contact', '63000000-0000-4000-8000-000000000001')$$,
-  '42501', 'new row violates row-level security policy for table "notes"', 'foreign workspace member cannot write engagement to another workspace'
+  '23503', 'Related contact must exist in the record workspace', 'foreign workspace member cannot write engagement to another workspace'
 );
 
 select * from finish();

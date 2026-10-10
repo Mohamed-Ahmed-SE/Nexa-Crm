@@ -3,7 +3,7 @@ import { leadSavedViewSchema, parsePersistedLeadView } from "@/lib/leads/saved-v
 
 const validView = {
   name: "  Qualified prospects ",
-  filters: { q: "Acme", status: "qualified", sourceId: "", ownerId: "unassigned" },
+  filters: { q: "Acme", status: "qualified", sourceId: "", ownerId: "unassigned", tagId: "" },
   sort: "value_desc",
   visibleColumns: ["name", "status", "value"],
 };
@@ -19,6 +19,13 @@ describe("saved lead view validation", () => {
     expect(leadSavedViewSchema.safeParse({ ...validView, visibleColumns: ["name", "private_notes"] }).success).toBe(false);
     expect(leadSavedViewSchema.safeParse({ ...validView, visibleColumns: ["name", "name"] }).success).toBe(false);
     expect(leadSavedViewSchema.safeParse({ ...validView, visibleColumns: [] }).success).toBe(false);
+  });
+
+  it("defaults legacy persisted views without tagId to no tag filter", () => {
+    const legacyFilters = { q: "Acme", status: "qualified", sourceId: "", ownerId: "unassigned" };
+    expect(parsePersistedLeadView({ filters: legacyFilters, sort: "value_desc", visible_columns: ["name"] })).toEqual({
+      filters: { ...legacyFilters, tagId: "" }, sort: "value_desc", visibleColumns: ["name"],
+    });
   });
 
   it("refuses malformed persisted JSON instead of using it as query state", () => {

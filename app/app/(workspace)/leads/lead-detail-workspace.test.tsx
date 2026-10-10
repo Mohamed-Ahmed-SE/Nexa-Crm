@@ -41,8 +41,8 @@ describe("LeadDetailWorkspace", () => {
     expect(screen.getByRole("link", { name: "+1 555 0100" })).toHaveAttribute("href", "tel:+1 555 0100");
     expect(screen.getByText("Operations Director")).toBeInTheDocument();
     expect(screen.getByText("Looking for a multi-year service agreement.")).toBeInTheDocument();
-    expect(screen.getByText("Apr 1, 2026")).toBeInTheDocument();
-    expect(screen.getByText("Apr 2, 2026")).toBeInTheDocument();
+    expect(screen.getByText("04/01/2026")).toBeInTheDocument();
+    expect(screen.getByText("04/02/2026")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "← Back to Leads" })).toHaveAttribute("href", "/app/leads");
   });
 

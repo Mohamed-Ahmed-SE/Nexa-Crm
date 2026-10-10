@@ -16,6 +16,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
   const data = await listWorkspaceDeals(supabase, context.workspaceId, context.userId, context.fullName, params);
   return <DealsWorkspace
     canCreate={canCreate}
+    canExport={hasWorkspacePermission(context.role, "data.export")}
     createIntent={canCreate && rawParams.create === "1"}
     canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")}
     canEditOwn={hasWorkspacePermission(context.role, "crm.edit.own")}

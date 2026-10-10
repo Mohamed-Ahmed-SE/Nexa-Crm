@@ -18,8 +18,11 @@ export type TaskOption = { id: string; type: TaskRelation["type"]; label: string
 export async function listWorkspaceTasks(supabase: Supabase, workspaceId: string, userId: string, params: TaskSearchParams, now = new Date()) {
   const { start, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
   let query = supabase.from("tasks").select("id,title,description,task_type,status,priority,due_at,assigned_to,created_by,related_entity_type,related_entity_id,completed_at", { count: "exact" })
-    .eq("workspace_id", workspaceId).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false })
-    .range((params.page - 1) * taskPageSize, params.page * taskPageSize - 1);
+    .eq("workspace_id", workspaceId);
+  query = params.sort === "title"
+    ? query.order("title", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false })
+    : query.order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
+  query = query.range((params.page - 1) * taskPageSize, params.page * taskPageSize - 1);
   switch (params.view) {
     case "my": query = query.eq("assigned_to", userId).eq("status", "open"); break;
     case "today": query = query.eq("status", "open").gte("due_at", start.toISOString()).lt("due_at", tomorrow.toISOString()); break;

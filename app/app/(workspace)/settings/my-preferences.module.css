@@ -1,0 +1,83 @@
+.section {
+  max-width: 760px;
+  margin: 24px 0;
+  padding: 18px 0;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.section h2 {
+  margin: 0 0 14px;
+  color: hsl(var(--foreground));
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.field {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 6px;
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-weight: 400;
+}
+
+.field select:focus-visible,
+.button:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+.field select:disabled,
+.button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.example {
+  flex: 1 1 160px;
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+}
+
+.button {
+  min-height: 40px;
+  padding: 8px 13px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: 8px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground, 0 0% 100%));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feedback {
+  margin: 12px 0 0;
+  color: hsl(var(--destructive, 0 72% 45%));
+  font-size: 12px;
+}
+
+.success {
+  color: hsl(var(--success, 142 55% 32%));
+}

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition, type FormEvent, type ReactNode, type RefObject } from "react";
 import { markDealLostAction, markDealWonAction, reopenDealAction, type DealActionResult } from "../actions";
 import type { DealDetail } from "@/lib/deals/repository";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDate, formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
 
 type Props = { detail: DealDetail; canEdit: boolean };
 
@@ -16,17 +18,13 @@ function currencyAmount(amount: number, currency: string) {
   }
 }
 
-function dateLabel(dateValue: string | null) {
-  if (!dateValue) return "Not set";
-  const date = new Date(`${dateValue.slice(0, 10)}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) ? "Not set" : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" }).format(date);
+function dateLabel(dateValue: string | null, dateFormat: DateFormat) {
+  return dateValue ? formatCalendarDate(dateValue, dateFormat) : "Not set";
 }
 
-function timestampLabel(timestamp: string) {
+function timestampLabel(timestamp: string, dateFormat: DateFormat) {
   const date = new Date(timestamp);
-  return Number.isNaN(date.getTime())
-    ? "Unavailable"
-    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date);
+  return Number.isNaN(date.getTime()) ? "Unavailable" : formatCalendarDateTime(date, dateFormat, "UTC");
 }
 
 function Property({ label, children }: { label: string; children: ReactNode }) {
@@ -133,6 +131,7 @@ function DealOutcomeControls({ detail, canEdit }: { detail: DealDetail; canEdit:
 }
 
 export function DealDetailWorkspace({ detail, canEdit }: Props) {
+  const dateFormat = useDateFormat();
   const { deal, company, contact, stage, pipeline, ownerLabel, source } = detail;
   return (
     <div className="page-container deals-page deal-detail-page">
@@ -154,7 +153,7 @@ export function DealDetailWorkspace({ detail, canEdit }: Props) {
       <section aria-label="Deal overview" className="deal-detail-overview">
         <div><span>Deal value</span><strong>{currencyAmount(Number(deal.amount), deal.currency)}</strong></div>
         <div><span>Probability</span><strong>{deal.probability}%</strong></div>
-        <div><span>Expected close</span><strong>{dateLabel(deal.expected_close_date)}</strong></div>
+        <div><span>Expected close</span><strong>{dateLabel(deal.expected_close_date, dateFormat)}</strong></div>
         <div><span>Stage</span><strong>{stage?.name ?? "Stage unavailable"}</strong></div>
       </section>
 
@@ -178,13 +177,13 @@ export function DealDetailWorkspace({ detail, canEdit }: Props) {
             <Property label="Pipeline">{pipeline?.name ?? "Unavailable"}</Property>
             <Property label="Deal value">{currencyAmount(Number(deal.amount), deal.currency)}</Property>
             <Property label="Probability">{deal.probability}%</Property>
-            <Property label="Expected close">{dateLabel(deal.expected_close_date)}</Property>
+            <Property label="Expected close">{dateLabel(deal.expected_close_date, dateFormat)}</Property>
             <Property label="Owner">{ownerLabel}</Property>
             <Property label="Priority">{deal.priority[0].toUpperCase() + deal.priority.slice(1)}</Property>
             <Property label="Status">{deal.status[0].toUpperCase() + deal.status.slice(1)}</Property>
             {source && <Property label="Source">{source}</Property>}
-            <Property label="Created">{timestampLabel(deal.created_at)}</Property>
-            <Property label="Last updated">{timestampLabel(deal.updated_at)}</Property>
+            <Property label="Created">{timestampLabel(deal.created_at, dateFormat)}</Property>
+            <Property label="Last updated">{timestampLabel(deal.updated_at, dateFormat)}</Property>
           </dl>
         </aside>
       </div>
@@ -192,7 +191,7 @@ export function DealDetailWorkspace({ detail, canEdit }: Props) {
       <section aria-labelledby="deal-activity-heading" className="deal-detail-section deal-detail-activity">
         <h2 id="deal-activity-heading">Activity</h2>
         {detail.activities.length ? <ol className="deal-activity-list">{detail.activities.map((activity) => <li key={activity.id}>
-          <div><strong>{activity.subject || activity.activity_type.replaceAll("_", " ")}</strong><time dateTime={activity.occurred_at}>{timestampLabel(activity.occurred_at)}</time></div>
+          <div><strong>{activity.subject || activity.activity_type.replaceAll("_", " ")}</strong><time dateTime={activity.occurred_at}>{timestampLabel(activity.occurred_at, dateFormat)}</time></div>
           {activity.body && <p>{activity.body}</p>}
         </li>)}</ol> : <p className="deal-activity-empty">No activity recorded for this deal yet.</p>}
       </section>

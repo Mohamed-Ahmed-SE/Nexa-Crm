@@ -4,20 +4,24 @@
 begin;
 
 insert into auth.users (
-  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+  id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, confirmation_token, email_change, email_change_token_new, recovery_token,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
   is_sso_user, is_anonymous
 )
 values
-  ('00000000-0000-4000-8000-000000000101', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'avery.stone@northstar-demo.example', '', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Avery Stone"}', now(), now(), false, false),
-  ('00000000-0000-4000-8000-000000000102', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'maya.hassan@northstar-demo.example', '', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Maya Hassan"}', now(), now(), false, false),
-  ('00000000-0000-4000-8000-000000000103', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'omar.nabil@northstar-demo.example', '', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Omar Nabil"}', now(), now(), false, false),
-  ('00000000-0000-4000-8000-000000000104', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'lina.kareem@northstar-demo.example', '', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Lina Kareem"}', now(), now(), false, false),
-  ('00000000-0000-4000-8000-000000000105', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'sam.reed@northstar-demo.example', '', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Sam Reed"}', now(), now(), false, false)
+  ('00000000-0000-4000-8000-000000000101', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'avery.stone@northstar-demo.example', '', now(), '', '', '', '', '{"provider":"email","providers":["email"]}', '{"full_name":"Avery Stone"}', now(), now(), false, false),
+  ('00000000-0000-4000-8000-000000000102', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'maya.hassan@northstar-demo.example', '', now(), '', '', '', '', '{"provider":"email","providers":["email"]}', '{"full_name":"Maya Hassan"}', now(), now(), false, false),
+  ('00000000-0000-4000-8000-000000000103', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'omar.nabil@northstar-demo.example', '', now(), '', '', '', '', '{"provider":"email","providers":["email"]}', '{"full_name":"Omar Nabil"}', now(), now(), false, false),
+  ('00000000-0000-4000-8000-000000000104', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'lina.kareem@northstar-demo.example', '', now(), '', '', '', '', '{"provider":"email","providers":["email"]}', '{"full_name":"Lina Kareem"}', now(), now(), false, false),
+  ('00000000-0000-4000-8000-000000000105', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'sam.reed@northstar-demo.example', '', now(), '', '', '', '', '{"provider":"email","providers":["email"]}', '{"full_name":"Sam Reed"}', now(), now(), false, false)
 on conflict (id) do update set
   email = excluded.email,
   encrypted_password = excluded.encrypted_password,
   email_confirmed_at = excluded.email_confirmed_at,
+  confirmation_token = excluded.confirmation_token,
+  email_change = excluded.email_change,
+  email_change_token_new = excluded.email_change_token_new,
+  recovery_token = excluded.recovery_token,
   raw_app_meta_data = excluded.raw_app_meta_data,
   raw_user_meta_data = excluded.raw_user_meta_data,
   updated_at = excluded.updated_at,

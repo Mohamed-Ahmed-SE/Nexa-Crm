@@ -1,14 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDate, type DateFormat } from "@/lib/preferences/date-format";
 import type { ReactNode } from "react";
 import type { LeadDetail } from "@/lib/leads/repository";
-
-const statusLabels: Record<LeadDetail["lead"]["status"], string> = {
-  new: "New",
-  contacted: "Contacted",
-  qualified: "Qualified",
-  unqualified: "Unqualified",
-  converted: "Converted",
-};
+import { statusLabels } from "@/lib/leads/schema";
 
 function formatCurrency(value: number, currency: string) {
   try {
@@ -18,11 +15,9 @@ function formatCurrency(value: number, currency: string) {
   }
 }
 
-function formatTimestamp(value: string) {
+function formatTimestamp(value: string, dateFormat: DateFormat) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? null
-    : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeZone: "UTC" }).format(date);
+  return Number.isNaN(date.getTime()) ? null : formatCalendarDate(date, dateFormat, { timeZone: "UTC" });
 }
 
 function Property({ label, children }: { label: string; children: ReactNode }) {
@@ -30,9 +25,10 @@ function Property({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function LeadDetailWorkspace({ detail }: { detail: LeadDetail }) {
+  const dateFormat = useDateFormat();
   const { lead, source, ownerLabel } = detail;
-  const createdAt = formatTimestamp(lead.created_at);
-  const updatedAt = formatTimestamp(lead.updated_at);
+  const createdAt = formatTimestamp(lead.created_at, dateFormat);
+  const updatedAt = formatTimestamp(lead.updated_at, dateFormat);
 
   return <main className="page-container leads-page contact-detail-page">
     <div className="contact-breadcrumb"><nav aria-label="Breadcrumb"><Link href="/app/leads">← Back to Leads</Link></nav></div>

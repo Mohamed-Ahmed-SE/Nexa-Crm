@@ -8,6 +8,8 @@ import {
   markNotificationReadAction,
 } from "@/lib/notifications/actions";
 import type { Notification } from "@/lib/notifications/repository";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDateTime } from "@/lib/preferences/date-format";
 
 export function NotificationsWorkspace() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -101,7 +103,8 @@ function NotificationItem({ notification, pending, onMarkRead }: {
   pending: boolean;
   onMarkRead: (notificationId: string) => void;
 }) {
-  const date = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(notification.created_at));
+  const dateFormat = useDateFormat();
+  const date = formatCalendarDateTime(notification.created_at, dateFormat);
   const recordLabel = notification.related_entity_type
     ? `Open ${notification.related_entity_type}`
     : notification.task_id ? "Open task" : null;

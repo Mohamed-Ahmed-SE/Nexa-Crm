@@ -2,7 +2,7 @@ import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
 import { parseLeadSearchParams } from "@/lib/leads/schema";
 import { leadSavedViewIdSchema, leadViewColumns } from "@/lib/leads/saved-view-schema";
-import { getLeadConversionOptions, listLeadSavedViews, listWorkspaceLeads } from "@/lib/leads/repository";
+import { getLeadConversionOptions, listLeadSavedViews, listWorkspaceLeadTags, listWorkspaceLeads } from "@/lib/leads/repository";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { LeadWorkspace } from "./lead-workspace";
 
@@ -14,9 +14,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const canConvert = hasWorkspacePermission(context.role, "crm.edit.own");
   const supabase = await createSupabaseServerClient();
   if (!supabase) return <LeadsLoadError />;
-  const [savedViews, conversionOptions] = await Promise.all([
+  const canTag = hasWorkspacePermission(context.role, "crm.edit.own");
+  const [savedViews, conversionOptions, tags] = await Promise.all([
     listLeadSavedViews(supabase, context.workspaceId, context.userId),
     canConvert ? getLeadConversionOptions(supabase, context.workspaceId) : Promise.resolve({ pipelineId: "", pipelines: [] }),
+    listWorkspaceLeadTags(supabase, context.workspaceId),
   ]);
   const requestedView = leadSavedViewIdSchema.safeParse(rawParams.view);
   const activeView = requestedView.success ? savedViews.find((view) => view.id === requestedView.data) : undefined;
@@ -40,6 +42,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     canConvert={canConvert}
     conversionOptions={conversionOptions}
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
+    canTag={canTag}
+    tags={tags}
     currentUserId={context.userId}
     currency={data.currency}
     leads={data.leads}
@@ -51,6 +55,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     qualifiedCount={data.qualifiedCount}
     search={activeParams.q}
     sourceFilter={activeParams.sourceId}
+    tagFilter={activeParams.tagId}
     sources={data.sources}
     statusFilter={activeParams.status}
     sort={activeParams.sort}

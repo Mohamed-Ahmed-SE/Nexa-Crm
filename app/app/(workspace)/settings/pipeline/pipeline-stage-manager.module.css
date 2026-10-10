@@ -1,0 +1,238 @@
+.manager {
+  display: grid;
+  gap: 28px;
+  max-width: 980px;
+}
+
+.pipeline h2 {
+  margin: 0 0 12px;
+  color: hsl(var(--foreground));
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid hsl(var(--border));
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(210px, 1.2fr) minmax(180px, 0.9fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.stageDetails {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.stageDetails strong,
+.stageDetails small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.stageDetails strong {
+  color: hsl(var(--foreground));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.stageDetails small,
+.locked {
+  margin-top: 3px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.position {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 7px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.renameForm,
+.probabilityForm,
+.orderControls,
+.disableForm,
+.reorderForm,
+.createForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.disableForm {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.disableForm .feedback {
+  flex-basis: 100%;
+}
+
+.field {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  min-width: 0;
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-weight: 400;
+}
+
+.field input:focus-visible,
+.probabilityInput input:focus-visible,
+.button:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+.probabilityForm {
+  flex-wrap: wrap;
+}
+
+.createForm {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.createForm .createField {
+  flex: 1 1 190px;
+}
+
+.probabilityField {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  min-width: 95px;
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.probabilityInput {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: hsl(var(--muted-foreground));
+}
+
+.probabilityInput input {
+  width: 64px;
+  min-height: 38px;
+  padding: 7px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.probabilityInput input[aria-invalid="true"] {
+  border-color: hsl(var(--destructive, 0 72% 51%));
+}
+
+.field input[aria-invalid="true"] {
+  border-color: hsl(var(--destructive, 0 72% 51%));
+}
+
+.button {
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: hsl(var(--primary) / 0.5);
+}
+
+.button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.primary {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground, 0 0% 100%));
+}
+
+.feedback {
+  margin: 0;
+  color: hsl(var(--destructive, 0 72% 45%));
+  font-size: 12px;
+}
+
+.success {
+  color: hsl(var(--success, 142 55% 32%));
+}
+
+.error {
+  color: hsl(var(--destructive, 0 72% 45%));
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.reorderForm {
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.empty {
+  color: hsl(var(--muted-foreground));
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .orderControls {
+    flex-wrap: wrap;
+  }
+
+  .orderControls .button {
+    flex: 1;
+  }
+}

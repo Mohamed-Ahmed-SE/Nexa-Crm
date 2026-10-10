@@ -5,6 +5,7 @@ export const taskViews = ["my", "today", "upcoming", "overdue", "completed"] as 
 export type TaskView = (typeof taskViews)[number];
 export const taskTypes = ["call", "email", "meeting", "follow_up", "to_do"] as const;
 export const taskPriorities = ["low", "medium", "high"] as const;
+export const taskSortOrders = ["due_date", "title"] as const;
 export const taskRelations = ["company", "contact", "lead", "deal"] as const;
 
 const paramsSchema = z.object({
@@ -12,6 +13,7 @@ const paramsSchema = z.object({
   q: z.string().trim().max(100).default(""),
   priority: z.enum(["all", ...taskPriorities]).default("all"),
   type: z.enum(["all", ...taskTypes]).default("all"),
+  sort: z.enum(taskSortOrders).default("due_date"),
   timezoneOffset: z.number().int().min(-840).max(840).catch(0),
   tomorrowTimezoneOffset: z.number().int().min(-840).max(840).catch(0),
   page: z.coerce.number().int().min(1).max(10000).default(1),
@@ -24,11 +26,12 @@ export function parseTaskSearchParams(input: Record<string, string | string[] | 
     q: typeof input.q === "string" ? input.q : "",
     priority: typeof input.priority === "string" ? input.priority : "all",
     type: typeof input.type === "string" ? input.type : "all",
+    sort: typeof input.sort === "string" ? input.sort : "due_date",
     timezoneOffset: typeof input.timezoneOffset === "string" ? Number(input.timezoneOffset) : 0,
     tomorrowTimezoneOffset: typeof input.tomorrowTimezoneOffset === "string" ? Number(input.tomorrowTimezoneOffset) : 0,
     page: typeof input.page === "string" ? input.page : "1",
   });
-  return parsed.success ? parsed.data : { view: "my", q: "", priority: "all", type: "all", timezoneOffset: 0, tomorrowTimezoneOffset: 0, page: 1 };
+  return parsed.success ? parsed.data : { view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, page: 1 };
 }
 
 export const createTaskSchema = z.object({

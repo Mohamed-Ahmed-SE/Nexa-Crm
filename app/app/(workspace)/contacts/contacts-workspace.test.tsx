@@ -1,6 +1,7 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ContactListRow } from "@/lib/contacts/repository";
+import type { ContactListRow, ContactSavedView } from "@/lib/contacts/repository";
+import type { ContactViewColumn } from "@/lib/contacts/schema";
 import { ContactsWorkspace } from "./contacts-workspace";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }) }));
@@ -12,6 +13,8 @@ vi.mock("./actions", () => ({
   logContactActivityAction: vi.fn(),
   updateContactAction: vi.fn(),
   uploadContactFileAction: vi.fn(),
+  saveContactViewAction: vi.fn(),
+  deleteContactViewAction: vi.fn(),
 }));
 
 const populatedContact: ContactListRow = {
@@ -21,7 +24,7 @@ const populatedContact: ContactListRow = {
   first_name: "Avery",
   last_name: "Chen",
   email: "avery@example.com",
-  phone: null,
+  phone: "555-0142",
   job_title: "Operations Lead",
   linkedin_url: null,
   owner_id: null,
@@ -65,9 +68,29 @@ const workspaceProps = {
   totalCount: 2,
   activeCount: 0,
   customerCount: 1,
+  sort: "updated_desc" as const,
+  visibleColumns: ["name", "company", "job_title", "email", "phone", "owner", "lifecycle", "last_activity", "next_activity", "tags"] as ContactViewColumn[],
+  savedViews: [{ id: "view-1", name: "Active Acme", filters: { q: "Acme", lifecycle: "active", companyId: "", ownerId: "" }, sort: "name_asc", visibleColumns: ["name", "lifecycle"] }] as ContactSavedView[],
+  activeViewId: "view-1",
 };
 
 describe("ContactsWorkspace list context", () => {
+  it("applies the selected view sort and visible columns to controls and table", () => {
+    render(<ContactsWorkspace {...workspaceProps} visibleColumns={["name", "lifecycle"]} sort="name_asc" page={2} matchedCount={30} />);
+
+    expect(screen.getByRole("combobox", { name: "Saved view" })).toHaveValue("view-1");
+    expect(screen.getByRole("combobox", { name: "Sort contacts" })).toHaveValue("name_asc");
+    expect(screen.getByRole("columnheader", { name: "Name" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Lifecycle" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Email" })).not.toBeInTheDocument();
+    expect(screen.queryByText("avery@example.com")).not.toBeInTheDocument();
+    expect(screen.queryByText("555-0142")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Previous" })).toHaveAttribute("href", expect.stringContaining("view=view-1"));
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort contacts" }), { target: { value: "updated_asc" } });
+    expect(screen.getByRole("combobox", { name: "Saved view" })).toHaveValue("");
+  });
+
   it("shows latest activity, next open task, and tags, with clear placeholders when absent", () => {
     render(<ContactsWorkspace {...workspaceProps} />);
 

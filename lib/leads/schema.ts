@@ -3,6 +3,9 @@ import { z } from "zod";
 export const leadStatuses = ["new", "contacted", "qualified", "unqualified"] as const;
 export type LeadStatus = (typeof leadStatuses)[number];
 export type LeadFilterStatus = LeadStatus | "converted";
+export const statusLabels: Record<LeadFilterStatus, string> = {
+  new: "New", contacted: "Contacted", qualified: "Qualified", unqualified: "Unqualified", converted: "Converted",
+};
 
 const optionalText = (max: number) => z.string().trim().max(max).optional().transform((value) => value || null);
 const optionalUuid = z.union([z.string().uuid(), z.literal("")]).optional().transform((value) => value || null);
@@ -22,12 +25,15 @@ export const leadInputSchema = z.object({
 export type LeadInput = z.infer<typeof leadInputSchema>;
 
 export const leadIdSchema = z.string().uuid();
+export const bulkLeadIdsSchema = z.array(leadIdSchema).min(1).max(25).refine((ids) => new Set(ids).size === ids.length, "Lead selections must not contain duplicates.");
+export const bulkLeadTagSchema = z.object({ leadIds: bulkLeadIdsSchema, tagId: z.string().uuid() });
 
 export type LeadSearchParams = {
   q: string;
   status: LeadFilterStatus | "all";
   sourceId: string;
   ownerId: string;
+  tagId: string;
   page: number;
   sort: "updated_desc" | "updated_asc" | "name_asc" | "name_desc" | "value_asc" | "value_desc";
 };
@@ -37,6 +43,7 @@ const searchParamsSchema = z.object({
   status: z.enum(["all", ...leadStatuses, "converted"]).default("all"),
   source: z.union([z.string().uuid(), z.literal("")]).default(""),
   owner: z.union([z.string().uuid(), z.literal(""), z.literal("unassigned")]).default(""),
+  tagId: z.union([z.string().uuid(), z.literal("")]).default(""),
   page: z.coerce.number().int().min(1).max(10000).default(1),
   sort: z.enum(["updated_desc", "updated_asc", "name_asc", "name_desc", "value_asc", "value_desc"]).default("updated_desc"),
 });
@@ -47,11 +54,12 @@ export function parseLeadSearchParams(input: Record<string, string | string[] | 
     status: typeof input.status === "string" ? input.status : "all",
     source: typeof input.source === "string" ? input.source : "",
     owner: typeof input.owner === "string" ? input.owner : "",
+    tagId: typeof input.tagId === "string" ? input.tagId : "",
     page: typeof input.page === "string" ? input.page : "1",
     sort: typeof input.sort === "string" ? input.sort : "updated_desc",
   });
-  if (!parsed.success) return { q: "", status: "all", sourceId: "", ownerId: "", page: 1, sort: "updated_desc" };
-  return { q: parsed.data.q, status: parsed.data.status, sourceId: parsed.data.source, ownerId: parsed.data.owner, page: parsed.data.page, sort: parsed.data.sort };
+  if (!parsed.success) return { q: "", status: "all", sourceId: "", ownerId: "", tagId: "", page: 1, sort: "updated_desc" };
+  return { q: parsed.data.q, status: parsed.data.status, sourceId: parsed.data.source, ownerId: parsed.data.owner, tagId: parsed.data.tagId, page: parsed.data.page, sort: parsed.data.sort };
 }
 
 export function buildLeadSearchFilter(query: string): string | null {

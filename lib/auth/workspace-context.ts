@@ -1,4 +1,5 @@
 import { isWorkspaceRole, type WorkspaceRole } from "@/lib/auth/permissions";
+import { normalizeDateFormat, type DateFormat } from "@/lib/preferences/date-format";
 
 export type WorkspaceContext = {
   userId: string;
@@ -7,12 +8,14 @@ export type WorkspaceContext = {
   workspaceId: string;
   workspaceName: string;
   role: WorkspaceRole;
+  dateFormat: DateFormat;
+  avatarUrl: string | null;
 };
 
 type AuthenticatedUser = { id: string; email?: string };
 type Membership = { user_id: string; workspace_id: string; role: string; status: string };
 type Workspace = { id: string; name: string };
-type Profile = { full_name: string | null } | null;
+type Profile = { full_name: string | null; date_format: string | null; avatar_url: string | null } | null;
 
 export function deriveWorkspaceContext(
   user: AuthenticatedUser,
@@ -30,5 +33,7 @@ export function deriveWorkspaceContext(
     workspaceId: workspace.id,
     workspaceName: workspace.name,
     role: membership.role,
+    dateFormat: normalizeDateFormat(profile?.date_format),
+    avatarUrl: profile?.avatar_url ?? null,
   };
 }

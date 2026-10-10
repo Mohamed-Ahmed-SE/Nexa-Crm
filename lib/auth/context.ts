@@ -37,7 +37,7 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("full_name")
+    .select("full_name, date_format, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
   if (profileError) throw new Error("Unable to load the current profile.");

@@ -2,12 +2,12 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LeadWorkspace } from "./lead-workspace";
-import { convertLeadAction } from "./actions";
+import { bulkAssignLeadsAction, bulkTagLeadsAction, convertLeadAction } from "./actions";
 import type { LeadRow } from "@/lib/leads/repository";
 
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
-vi.mock("./actions", () => ({ createLeadAction: vi.fn(), updateLeadAction: vi.fn(), convertLeadAction: vi.fn(), saveLeadViewAction: vi.fn(), deleteLeadViewAction: vi.fn() }));
+vi.mock("./actions", () => ({ createLeadAction: vi.fn(), updateLeadAction: vi.fn(), convertLeadAction: vi.fn(), bulkAssignLeadsAction: vi.fn(), bulkTagLeadsAction: vi.fn(), saveLeadViewAction: vi.fn(), deleteLeadViewAction: vi.fn() }));
 
 Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value() { this.setAttribute("open", ""); } });
 Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value() { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); } });
@@ -19,16 +19,42 @@ const lead: LeadRow = {
 };
 const view = {
   id: "5c144f7b-80bd-48f0-8f4c-75a1859176e6", name: "Qualified high value",
-  filters: { q: "", status: "qualified" as const, sourceId: "", ownerId: "" }, sort: "value_desc" as const,
+  filters: { q: "", status: "qualified" as const, sourceId: "", ownerId: "", tagId: "" }, sort: "value_desc" as const,
   visibleColumns: ["name", "value"] as ("name" | "value")[],
 };
 const props = {
-  leads: [lead], sources: [], owners: [{ id: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", label: "Taylor Reed" }], canCreate: false, canImport: false, canExport: false, createIntent: false,
+  leads: [lead], sources: [], tags: [], owners: [{ id: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", label: "Taylor Reed" }], canTag: false, canCreate: false, canImport: false, canExport: false, createIntent: false,
   canEditAll: false, canConvert: false, conversionOptions: { pipelineId: "", pipelines: [] }, canReassign: false, currentUserId: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", currency: "USD",
-  search: "", statusFilter: "qualified", sourceFilter: "", ownerFilter: "", page: 1, totalCount: 1, matchedCount: 1,
+  search: "", statusFilter: "qualified", sourceFilter: "", tagFilter: "", ownerFilter: "", page: 1, totalCount: 1, matchedCount: 1,
   newCount: 0, qualifiedCount: 1, sort: "value_desc" as const, visibleColumns: ["name", "value"] as ("name" | "value")[],
   savedViews: [view], activeViewId: view.id,
 };
+
+describe("LeadWorkspace bulk actions", () => {
+  it("selects only visible-page leads and completes bulk assignment and tag actions", async () => {
+    const user = userEvent.setup();
+    vi.mocked(bulkAssignLeadsAction).mockResolvedValue({ ok: true, message: "Assigned 1 leads." });
+    vi.mocked(bulkTagLeadsAction).mockResolvedValue({ ok: true, message: "Tag is present on all 1 selected leads." });
+    render(<LeadWorkspace {...props} canReassign canTag tags={[{ id: "5c144f7b-80bd-48f0-8f4c-75a1859176e6", name: "Priority", color_token: null }]} />);
+
+    await user.click(screen.getByRole("checkbox", { name: "Select all visible leads on this page" }));
+    expect(screen.getByText("1 selected on this page")).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Assign selected leads to owner" }), "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2");
+    await user.click(screen.getByRole("button", { name: "Assign owner" }));
+    await waitFor(() => expect(screen.queryByText("1 selected on this page")).not.toBeInTheDocument());
+    expect(routerMocks.refresh).toHaveBeenCalled();
+
+    await user.click(screen.getByRole("checkbox", { name: "Select Taylor Reed" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Add tag to selected leads" }), "5c144f7b-80bd-48f0-8f4c-75a1859176e6");
+    await user.click(screen.getByRole("button", { name: "Add tag" }));
+    await waitFor(() => expect(bulkTagLeadsAction).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Tag is present on all 1 selected leads."));
+    expect(screen.queryByText("1 selected on this page")).not.toBeInTheDocument();
+    const tagForm = vi.mocked(bulkTagLeadsAction).mock.calls.at(-1)?.[1];
+    expect(tagForm?.getAll("leadIds")).toEqual([lead.id]);
+    expect(tagForm?.get("tagId")).toBe("5c144f7b-80bd-48f0-8f4c-75a1859176e6");
+  });
+});
 
 describe("LeadWorkspace saved views", () => {
   it("offers the user's saved view and renders only its selected data columns", () => {
@@ -43,6 +69,15 @@ describe("LeadWorkspace saved views", () => {
     expect(within(row).queryByText("Acme")).not.toBeInTheDocument();
     expect(screen.getByRole("group", { name: "Visible columns" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete this view" })).toBeInTheDocument();
+  });
+
+  it("renders batched tags as compact semantic labels and includes the active tag in CSV export", () => {
+    render(<LeadWorkspace {...props} canExport tagFilter="5c144f7b-80bd-48f0-8f4c-75a1859176e6" leads={[{ ...lead, tags: [{ id: "5c144f7b-80bd-48f0-8f4c-75a1859176e6", name: "Priority", color_token: null }] }]} visibleColumns={["name", "tags"]} />);
+
+    const row = screen.getByRole("row", { name: /Taylor Reed/ });
+    expect(within(row).getByText("Priority")).toHaveClass("contact-tag");
+    expect(within(row).getByText("Priority").parentElement).toHaveClass("contact-tag-list");
+    expect(screen.getByRole("link", { name: "Export CSV" })).toHaveAttribute("href", "/app/leads/export?status=qualified&tagId=5c144f7b-80bd-48f0-8f4c-75a1859176e6");
   });
 
   it("opens conversion confirmation for an editable unconverted lead only", async () => {
@@ -108,18 +143,20 @@ describe("LeadWorkspace saved views", () => {
 
   it("clears a selected view when filters or sort change, but keeps an explicitly reselected view", async () => {
     const user = userEvent.setup();
-    render(<LeadWorkspace {...props} />);
+    render(<LeadWorkspace {...props} tags={[{ id: "5c144f7b-80bd-48f0-8f4c-75a1859176e6", name: "Priority", color_token: null }]} />);
     const savedViewSelect = screen.getByRole("combobox", { name: "Saved view" });
     const filterForm = screen.getByRole("button", { name: "Apply filters" }).closest("form");
 
     await user.type(screen.getByRole("searchbox", { name: "Search leads by name, company, or email" }), "Acme");
     expect(savedViewSelect).toHaveValue("");
     await user.selectOptions(screen.getByRole("combobox", { name: "Filter by status" }), "new");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Filter by tag" }), "5c144f7b-80bd-48f0-8f4c-75a1859176e6");
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort leads" }), "name_asc");
 
     const editedFilters = new FormData(filterForm!);
     expect(editedFilters.get("q")).toBe("Acme");
     expect(editedFilters.get("status")).toBe("new");
+    expect(editedFilters.get("tagId")).toBe("5c144f7b-80bd-48f0-8f4c-75a1859176e6");
     expect(editedFilters.get("sort")).toBe("name_asc");
     expect(editedFilters.get("view")).toBe("");
 

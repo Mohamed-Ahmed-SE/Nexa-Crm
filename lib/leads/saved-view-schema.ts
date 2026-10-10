@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const leadViewColumns = ["name", "company", "status", "source", "owner", "value", "updated"] as const;
+export const leadViewColumns = ["name", "company", "status", "source", "owner", "value", "updated", "tags"] as const;
 export type LeadViewColumn = (typeof leadViewColumns)[number];
 
 export const leadViewSorts = [
@@ -13,6 +13,7 @@ const leadFiltersSchema = z.object({
   status: z.enum(["all", "new", "contacted", "qualified", "unqualified", "converted"]),
   sourceId: z.union([z.string().uuid(), z.literal("")]),
   ownerId: z.union([z.string().uuid(), z.literal(""), z.literal("unassigned")]),
+  tagId: z.union([z.string().uuid(), z.literal("")]).default(""),
 }).strict();
 
 export const leadSavedViewSchema = z.object({

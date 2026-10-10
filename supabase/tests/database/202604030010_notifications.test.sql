@@ -24,13 +24,13 @@ select set_config('request.jwt.claim.sub', 'a1000000-0000-4000-8000-000000000001
 insert into public.leads (id, workspace_id, full_name, currency, owner_id, created_by)
 values ('a3000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 'Assigned Lead', 'USD', 'a1000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001'),
        ('a3000000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001', 'Self Assigned Lead', 'USD', 'a1000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001');
-insert into public.tasks (id, workspace_id, title, status, priority, due_at, assigned_to, created_by)
+insert into public.tasks (id, workspace_id, title, status, priority, due_at, assigned_to, created_by, completed_at)
 values
-  ('a4000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 'Due now task', 'open', 'medium', now(), 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001'),
-  ('a4000000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001', 'Overdue task', 'open', 'medium', date_trunc('day', now()) - interval '1 hour', 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001'),
-  ('a4000000-0000-4000-8000-000000000003', 'a2000000-0000-4000-8000-000000000001', 'Completed task', 'completed', 'medium', now(), 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001'),
-  ('a4000000-0000-4000-8000-000000000004', 'a2000000-0000-4000-8000-000000000001', 'Cancelled task', 'cancelled', 'medium', now(), 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001'),
-  ('a4000000-0000-4000-8000-000000000005', 'a2000000-0000-4000-8000-000000000001', 'Unassigned task', 'open', 'medium', now(), null, 'a1000000-0000-4000-8000-000000000001');
+  ('a4000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 'Due now task', 'open', 'medium', now(), 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001', null),
+  ('a4000000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001', 'Overdue task', 'open', 'medium', date_trunc('day', now()) - interval '1 hour', 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001', null),
+  ('a4000000-0000-4000-8000-000000000003', 'a2000000-0000-4000-8000-000000000001', 'Completed task', 'completed', 'medium', now(), 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001', now()),
+  ('a4000000-0000-4000-8000-000000000004', 'a2000000-0000-4000-8000-000000000001', 'Cancelled task', 'cancelled', 'medium', now(), 'a1000000-0000-4000-8000-000000000003', 'a1000000-0000-4000-8000-000000000001', null),
+  ('a4000000-0000-4000-8000-000000000005', 'a2000000-0000-4000-8000-000000000001', 'Unassigned task', 'open', 'medium', now(), null, 'a1000000-0000-4000-8000-000000000001', null);
 insert into public.notifications (workspace_id, recipient_id, notification_type, title, message, event_key)
 values ('a2000000-0000-4000-8000-000000000002', 'a1000000-0000-4000-8000-000000000004', 'invite_accepted', 'Invitation accepted', 'Other workspace invite', 'scope-fixture');
 insert into public.workspace_invites (id, workspace_id, email, role, token_hash, invited_by)
@@ -62,7 +62,11 @@ select is((select count(*)::integer from public.notifications where workspace_id
 select throws_ok($$select public.generate_task_notifications('a2000000-0000-4000-8000-000000000002', pg_catalog.date_trunc('day', pg_catalog.now()), pg_catalog.date_trunc('day', pg_catalog.now()) + interval '1 day')$$, '42501', null, 'a member cannot generate notifications for another workspace');
 select is((select count(*)::integer from public.notifications where recipient_id <> 'a1000000-0000-4000-8000-000000000003'), 0, 'member RLS exposes only notifications addressed to the caller');
 select is((select count(*)::integer from public.notifications where workspace_id = 'a2000000-0000-4000-8000-000000000002'), 0, 'member RLS hides another workspace notification even when it exists');
-select is((with changed as (update public.notifications set read_at = now() where recipient_id = 'a1000000-0000-4000-8000-000000000001' returning 1) select count(*)::integer from changed), 0, 'a recipient cannot mark another users notification as read');
+update public.notifications set read_at = now() where recipient_id = 'a1000000-0000-4000-8000-000000000001';
+reset role;
+select set_config('request.jwt.claim.sub', 'a1000000-0000-4000-8000-000000000003', true);
+select is((select count(*)::integer from public.notifications where recipient_id = 'a1000000-0000-4000-8000-000000000001' and read_at is not null), 0, 'a recipient cannot mark another users notification as read');
+set local role authenticated;
 select throws_ok($$select public.generate_task_notifications('a2000000-0000-4000-8000-000000000001', pg_catalog.now(), pg_catalog.now())$$, '22023', null, 'invalid browser-day bounds are rejected');
 select lives_ok($$update public.notifications set read_at = now() where recipient_id = 'a1000000-0000-4000-8000-000000000003' and notification_type = 'task_due'$$, 'a recipient can mark their own notification as read');
 select is((select count(*)::integer from public.notifications where recipient_id = 'a1000000-0000-4000-8000-000000000003' and notification_type = 'task_due' and read_at is not null), 1, 'the read-state change is persisted');

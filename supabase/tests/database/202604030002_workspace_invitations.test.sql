@@ -82,7 +82,7 @@ select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001
 select ok(
   exists (
     select 1 from public.list_workspace_invites('20000000-0000-4000-8000-000000000001')
-    where email = 'person@example.test' and accepted_at is not null and revoked_at is null
+    where email = 'accepted@example.test' and accepted_at is not null and revoked_at is null
   ),
   'successful acceptance marks the invitation as consumed'
 );

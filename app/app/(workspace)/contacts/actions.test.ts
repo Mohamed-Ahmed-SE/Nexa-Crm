@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   select: vi.fn(),
   insert: vi.fn(),
+  activityInsert: vi.fn(),
   eq: vi.fn(),
   is: vi.fn(),
 }));
@@ -48,8 +49,13 @@ function setupDuplicateLookup() {
     is: mocks.is.mockReturnThis(),
     then: (resolve: (result: { data: ContactDuplicateCandidate[]; error: null }) => unknown) => Promise.resolve({ data: [match], error: null }).then(resolve),
   };
-  mocks.select.mockReturnValue(query);
-  mocks.from.mockImplementation(() => ({ select: mocks.select, insert: mocks.insert }));
+  const insertQuery = {
+    select: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: { id: "contact-created" }, error: null }),
+  };
+  const contactTable = { select: mocks.select.mockReturnValue(query), insert: mocks.insert.mockReturnValue(insertQuery) };
+  const activityTable = { insert: mocks.activityInsert.mockResolvedValue({ error: null }) };
+  mocks.from.mockImplementation((table: string) => table === "contacts" ? contactTable : activityTable);
   mocks.createSupabaseServerClient.mockResolvedValue({ from: mocks.from });
 }
 

@@ -63,7 +63,7 @@ select throws_ok(
 );
 select throws_ok(
   $$insert into public.tasks (workspace_id, title, assigned_to, created_by, related_entity_type, related_entity_id) values ('72000000-0000-4000-8000-000000000002', 'Foreign company task', '71000000-0000-4000-8000-000000000004', '71000000-0000-4000-8000-000000000002', 'company', '73000000-0000-4000-8000-000000000003')$$,
-  '42501', 'new row violates row-level security policy for table "tasks"', 'member cannot create company task in another workspace'
+  '23503', 'Related company must exist in the record workspace', 'member cannot create company task in another workspace'
 );
 insert into public.attachments (workspace_id, storage_path, filename, mime_type, size_bytes, uploaded_by, related_entity_type, related_entity_id)
 values ('72000000-0000-4000-8000-000000000001', '72000000-0000-4000-8000-000000000001/73000000-0000-4000-8000-000000000001/file-1/test.pdf', 'test.pdf', 'application/pdf', 10, '71000000-0000-4000-8000-000000000002', 'company', '73000000-0000-4000-8000-000000000001');

@@ -5,7 +5,7 @@ import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
 import { canRetainArchivedCompany, contactCanBeEdited } from "@/lib/contacts/relations";
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
-import { contactIdSchema, contactInputSchema } from "@/lib/contacts/schema";
+import { contactIdSchema, contactInputSchema, lifecycleLabels, type ContactLifecycleStatus } from "@/lib/contacts/schema";
 import { getContactForEdit } from "@/lib/contacts/repository";
 import { findContactDuplicates, normalizeContactEmail, normalizeContactPhone, type ContactDuplicate, type ContactDuplicateCandidate } from "@/lib/contacts/duplicates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -68,7 +68,7 @@ export async function createContactAction(_previous: ContactActionState, form: F
     if (!duplicateLookupError) duplicateMatches = findContactDuplicates((candidates ?? []) as ContactDuplicateCandidate[], email, phone);
   }
   if (duplicateMatches.length && text(form, "confirmDuplicate") !== "true") return { duplicateMatches };
-  const { error } = await supabase.from("contacts").insert({
+  const { data: createdContact, error } = await supabase.from("contacts").insert({
     workspace_id: context.workspaceId,
     created_by: context.userId,
     first_name: parsed.data.firstName,
@@ -80,10 +80,31 @@ export async function createContactAction(_previous: ContactActionState, form: F
     owner_id: ownerId,
     lifecycle_status: parsed.data.lifecycleStatus,
     linkedin_url: parsed.data.linkedinUrl,
-  });
-  if (error) return { message: "Contact could not be created. Check your access and try again." };
+  }).select("id").maybeSingle();
+  if (error || !createdContact?.id) return { message: "Contact could not be created. Check your access and try again." };
   revalidatePath("/app/contacts");
-  return { ok: true, message: "Contact added." };
+  const logged = await logContactCreation(supabase, context.workspaceId, context.userId, createdContact.id);
+  return logged
+    ? { ok: true, message: "Contact added." }
+    : { ok: true, message: "Contact added, but its activity could not be recorded." };
+}
+
+async function logContactCreation(
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,
+  workspaceId: string,
+  userId: string,
+  contactId: string,
+) {
+  try {
+    const { error } = await supabase.from("activities").insert({
+      workspace_id: workspaceId, activity_type: "record_created", subject: "Contact created",
+      occurred_at: new Date().toISOString(), created_by: userId, owner_id: userId,
+      related_entity_type: "contact", related_entity_id: contactId, is_system_event: false,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
 }
 
 export async function updateContactAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
@@ -103,8 +124,67 @@ export async function updateContactAction(_previous: ContactActionState, form: F
   if (canReassign && parsed.data.ownerId !== current.owner_id && !await verifyOwner(supabase, context.workspaceId, parsed.data.ownerId)) return { message: "Select an active owner in this workspace." };
   const { data, error: updateError } = await supabase.from("contacts").update({ ...parsed.data, owner_id: canReassign ? parsed.data.ownerId : current.owner_id }).eq("workspace_id", context.workspaceId).eq("id", id.data).is("archived_at", null).select("id").maybeSingle();
   if (updateError || !data) return { message: "Contact could not be updated. Check your access and try again." };
+  const ownerChanged = current.owner_id !== parsed.data.ownerId;
+  const statusChanged = current.lifecycle_status !== parsed.data.lifecycleStatus;
+  let ownerActivityLogged = true;
+  if (ownerChanged) {
+    const [oldOwnerLabel, newOwnerLabel] = await Promise.all([
+      getContactOwnerLabel(supabase, current.owner_id), getContactOwnerLabel(supabase, parsed.data.ownerId),
+    ]);
+    try {
+      const { error: activityError } = await supabase.from("activities").insert({
+        workspace_id: context.workspaceId, activity_type: "owner_changed", subject: "Contact owner changed",
+        body: `Contact owner changed from ${oldOwnerLabel} to ${newOwnerLabel}.`, occurred_at: new Date().toISOString(),
+        created_by: context.userId, owner_id: context.userId, related_entity_type: "contact", related_entity_id: id.data,
+        metadata: { old_owner_id: current.owner_id, new_owner_id: parsed.data.ownerId }, is_system_event: false,
+      });
+      ownerActivityLogged = !activityError;
+    } catch {
+      ownerActivityLogged = false;
+    }
+  }
+  const statusActivityLogged = !statusChanged || await logContactStatusChange(
+    supabase, context.workspaceId, context.userId, id.data, current.lifecycle_status, parsed.data.lifecycleStatus,
+  );
   revalidatePath("/app/contacts"); revalidatePath(`/app/contacts/${id.data}`);
+  if (!ownerActivityLogged && !statusActivityLogged) {
+    return { ok: true, message: "Contact updated, but one or more activities could not be recorded." };
+  }
+  if (!ownerActivityLogged) return { ok: true, message: "Contact updated, but its owner-change activity could not be recorded." };
+  if (!statusActivityLogged) return { ok: true, message: "Contact updated, but its status-change activity could not be recorded." };
   return { ok: true, message: "Contact updated." };
+}
+
+async function getContactOwnerLabel(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, ownerId: string | null) {
+  if (!ownerId) return "Unassigned";
+  try {
+    const { data: profile, error } = await supabase.from("profiles").select("full_name").eq("id", ownerId).maybeSingle();
+    const label = !error ? profile?.full_name?.trim() : "";
+    return label && label !== ownerId && !/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(label) ? label : "Workspace member";
+  } catch {
+    return "Workspace member";
+  }
+}
+
+async function logContactStatusChange(
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>,
+  workspaceId: string,
+  userId: string,
+  contactId: string,
+  oldStatus: ContactLifecycleStatus,
+  newStatus: ContactLifecycleStatus,
+) {
+  try {
+    const { error } = await supabase.from("activities").insert({
+      workspace_id: workspaceId, activity_type: "status_changed", subject: "Contact status changed",
+      body: `Contact lifecycle status changed from ${lifecycleLabels[oldStatus]} to ${lifecycleLabels[newStatus]}.`, occurred_at: new Date().toISOString(),
+      created_by: userId, owner_id: userId, related_entity_type: "contact", related_entity_id: contactId,
+      metadata: { old_status: oldStatus, new_status: newStatus }, is_system_event: false,
+    });
+    return !error;
+  } catch {
+    return false;
+  }
 }
 
 export async function logContactActivityAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {

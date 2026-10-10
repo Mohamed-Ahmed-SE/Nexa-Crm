@@ -63,13 +63,13 @@ select ok(
 );
 
 select ok(
-  (select count(*) = 8 from public.lead_sources where workspace_id = '42000000-0000-4000-8000-000000000002')
+  (select count(*) = 9 from public.lead_sources where workspace_id = '42000000-0000-4000-8000-000000000002')
   and exists (select 1 from public.lead_sources where workspace_id = '42000000-0000-4000-8000-000000000002' and name = 'Website (custom)')
   and exists (select 1 from public.lead_sources where workspace_id = '42000000-0000-4000-8000-000000000002' and name = 'Outbound'),
   're-running the existing-workspace seeder restores missing sources without duplicating or overwriting customized ones'
 );
 select ok(
-  (select count(*) = 7 from public.lost_reasons where workspace_id = '42000000-0000-4000-8000-000000000002')
+  (select count(*) = 8 from public.lost_reasons where workspace_id = '42000000-0000-4000-8000-000000000002')
   and exists (select 1 from public.lost_reasons where workspace_id = '42000000-0000-4000-8000-000000000002' and name = 'Pricing reviewed')
   and exists (select 1 from public.lost_reasons where workspace_id = '42000000-0000-4000-8000-000000000002' and name = 'Timing'),
   're-running the existing-workspace seeder restores missing lost reasons and preserves customized ones'
@@ -88,7 +88,7 @@ select is(
   6, 'workspace creation seeds its six-stage default pipeline'
 );
 select is(
-  (select string_agg(name || ':' || probability::text, ',' order by position) from public.pipeline_stages ps join public.pipelines p on p.id = ps.pipeline_id and p.workspace_id = ps.workspace_id where p.workspace_id = '42000000-0000-4000-8000-000000000001'),
+  (select string_agg(ps.name || ':' || ps.probability::text, ',' order by ps.position) from public.pipeline_stages ps join public.pipelines p on p.id = ps.pipeline_id and p.workspace_id = ps.workspace_id where p.workspace_id = '42000000-0000-4000-8000-000000000001'),
   'Discovery:10,Qualified:30,Proposal:60,Negotiation:80,Won:100,Lost:0', 'default pipeline stages have documented probabilities and order'
 );
 select is((select count(*)::integer from public.lead_sources where workspace_id = '42000000-0000-4000-8000-000000000001'), 7, 'workspace creation seeds seven lead sources');
@@ -116,7 +116,12 @@ select throws_ok(
 select set_config('request.jwt.claim.sub', '41000000-0000-4000-8000-000000000003', true);
 update public.companies set name = 'Member changed own' where id = '43000000-0000-4000-8000-000000000001';
 select is((select name from public.companies where id = '43000000-0000-4000-8000-000000000001'), 'Member changed own', 'member may update an owned record');
-select is((with changed as (update public.companies set name = 'Member changed other' where id = '43000000-0000-4000-8000-000000000002' returning 1) select count(*)::integer from changed), 0, 'member cannot update a record owned by another user');
+update public.companies set name = 'Member changed other' where id = '43000000-0000-4000-8000-000000000002';
+reset role;
+select set_config('request.jwt.claim.sub', '41000000-0000-4000-8000-000000000001', true);
+select is((select name from public.companies where id = '43000000-0000-4000-8000-000000000002'), 'Manager owned', 'member cannot update a record owned by another user');
+select set_config('request.jwt.claim.sub', '41000000-0000-4000-8000-000000000003', true);
+set local role authenticated;
 insert into public.companies (workspace_id, name, owner_id, created_by)
 values ('42000000-0000-4000-8000-000000000001', 'Member-created record', '41000000-0000-4000-8000-000000000003', '41000000-0000-4000-8000-000000000003');
 select is((select count(*)::integer from public.companies where name = 'Member-created record'), 1, 'member can create a record assigned to themselves');

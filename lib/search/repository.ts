@@ -44,7 +44,7 @@ async function fetchWorkspaceSearchRows(supabase: Supabase, workspaceId: string,
       .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.contacts!).limit(resultLimit),
     supabase.from("companies").select("id, name, industry, website")
       .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.companies!).limit(resultLimit),
-    supabase.from("deals").select("id, title, status, company:companies(name), primary_contact:contacts(full_name)")
+    supabase.from("deals").select("id, title, status, company:companies(name), primary_contact:contacts(first_name,last_name)")
       .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.deals!).limit(resultLimit),
   ]);
 
@@ -75,9 +75,9 @@ function mapDeal(deal: Awaited<ReturnType<typeof fetchWorkspaceSearchRows>>["dea
   };
 }
 
-function relationName(relation: { name?: string; full_name?: string } | Array<{ name?: string; full_name?: string }> | null) {
+function relationName(relation: { name?: string; first_name?: string; last_name?: string } | Array<{ name?: string; first_name?: string; last_name?: string }> | null) {
   const value = Array.isArray(relation) ? relation[0] : relation;
-  return value?.name ?? value?.full_name ?? "";
+  return value?.name ?? [value?.first_name, value?.last_name].filter(Boolean).join(" ");
 }
 
 export type { GlobalSearchItem };

@@ -8,6 +8,8 @@ import { GlobalSearch } from "@/components/shell/global-search";
 import { SidebarNavigation } from "@/components/shell/sidebar-navigation";
 import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { signOutAction } from "@/lib/auth/actions";
+import { DateFormatProvider } from "@/components/auth/date-format-provider";
+import { UserAvatar } from "@/components/shell/user-avatar";
 import type { WorkspaceContext } from "@/lib/auth/context";
 
 type AppShellProps = {
@@ -21,7 +23,8 @@ export function AppShell({ children, context }: AppShellProps) {
   const NavigationToggleIcon = isMobileNavigationOpen ? X : Menu;
 
   return (
-    <div className="app-frame">
+    <DateFormatProvider dateFormat={context.dateFormat}>
+      <div className="app-frame">
       <aside
         aria-label="Nexa CRM workspace"
         className={`sidebar${isMobileNavigationOpen ? " sidebar-open" : ""}`}
@@ -57,7 +60,7 @@ export function AppShell({ children, context }: AppShellProps) {
               <Bell aria-hidden="true" size={18} />
             </Link>
             <div aria-label="Nexa CRM workspace" className="workspace-identity">
-              <span aria-hidden="true" className="user-avatar">{context.fullName.slice(0, 1).toUpperCase()}</span>
+              <UserAvatar key={context.avatarUrl ?? "no-avatar"} avatarUrl={context.avatarUrl} fullName={context.fullName} />
               <span className="workspace-copy">
                 <span className="workspace-name">{context.workspaceName}</span>
                 <span className="workspace-caption">{context.fullName} · {context.role}</span>
@@ -78,6 +81,7 @@ export function AppShell({ children, context }: AppShellProps) {
           type="button"
         />
       ) : null}
-    </div>
+      </div>
+    </DateFormatProvider>
   );
 }

@@ -13,6 +13,39 @@ const cteValues = (name: string) =>
 const seedRowCount = (values: string) => [...values.matchAll(/^\s*\('[0-9a-f-]+'/gm)].length;
 
 describe("demo seed data", () => {
+  it("seeds non-null Auth tokens for all fixed demo users", () => {
+    const authUsersInsert = seedSql.match(
+      /insert into auth\.users\s*\(([\s\S]*?)\)\s*values([\s\S]*?)\s*on conflict\s*\(id\)\s*do update\s*set([\s\S]*?);/i,
+    );
+    expect(authUsersInsert).toBeDefined();
+
+    const columns = authUsersInsert![1].split(",").map((column) => column.trim());
+    const userRows = authUsersInsert![2].split(/\r?\n/);
+    const demoEmails = [
+      "avery.stone@northstar-demo.example",
+      "maya.hassan@northstar-demo.example",
+      "omar.nabil@northstar-demo.example",
+      "lina.kareem@northstar-demo.example",
+      "sam.reed@northstar-demo.example",
+    ];
+
+    expect(columns).toContain("encrypted_password");
+    expect(columns).toContain("confirmation_token");
+    expect(columns).toContain("email_change");
+    expect(columns).toContain("email_change_token_new");
+    expect(columns).toContain("recovery_token");
+    for (const email of demoEmails) {
+      const row = userRows.find((line) => line.includes(email));
+      expect(row).toBeDefined();
+      expect(row).toMatch(/,\s*'',\s*now\(\),\s*'',\s*'',\s*'',\s*'',\s*'\{"provider":"email"/);
+      expect(row).not.toMatch(/extensions\.crypt/i);
+    }
+    expect(authUsersInsert![3]).toMatch(/confirmation_token\s*=\s*excluded\.confirmation_token/i);
+    expect(authUsersInsert![3]).toMatch(/email_change\s*=\s*excluded\.email_change/i);
+    expect(authUsersInsert![3]).toMatch(/email_change_token_new\s*=\s*excluded\.email_change_token_new/i);
+    expect(authUsersInsert![3]).toMatch(/recovery_token\s*=\s*excluded\.recovery_token/i);
+  });
+
   it("uses a supported task type", () => {
     const assignedTaskType = seedSql.match(
       /insert into public\.tasks\s*\([\s\S]*?\)\s*select[\s\S]*?\n\s*'([^']+)',\s*t\.status,/,

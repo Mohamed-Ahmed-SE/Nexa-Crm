@@ -25,6 +25,7 @@ const dealsData: DealsData = {
 const boardProps = {
   data: dealsData,
   canCreate: false,
+  canExport: false,
   canEditOwn: false,
   canEditAll: false,
   canReassign: false,
@@ -44,5 +45,17 @@ describe("DealsWorkspace board", () => {
     expect(within(board).getByRole("article", { name: /Won platform deal/ })).toBeInTheDocument();
     expect(within(board).getByRole("article", { name: /Lost services deal/ })).toBeInTheDocument();
     expect(within(board).queryByText(/outcomes are not available yet/i)).not.toBeInTheDocument();
+  });
+
+  it("offers export only when permitted and retains the active filters", () => {
+    const { rerender } = render(<DealsWorkspace {...boardProps} canExport />);
+    const exportLink = screen.getByRole("link", { name: "Export CSV" });
+    expect(exportLink).toHaveAttribute("href", "/app/deals/export?pipeline=pipeline-1");
+
+    rerender(<DealsWorkspace {...boardProps} canExport search="Acme + North" ownerFilter="unassigned" view="list" />);
+    expect(screen.getByRole("link", { name: "Export CSV" })).toHaveAttribute("href", "/app/deals/export?pipeline=pipeline-1&q=Acme+%2B+North&owner=unassigned");
+
+    rerender(<DealsWorkspace {...boardProps} />);
+    expect(screen.queryByRole("link", { name: "Export CSV" })).not.toBeInTheDocument();
   });
 });

@@ -19,6 +19,39 @@ describe("read-only demo workspace", () => {
     expect(screen.getByText("All records are fictional. Changes are not saved.")).toBeInTheDocument();
   });
 
+  it("links each company title to its sample company detail page", () => {
+    const records = createDemoRecords(new Date("2025-04-15T12:00:00.000Z"));
+    render(<DemoWorkspaceSection section="companies" />);
+
+    const table = screen.getByRole("table", { name: "Fictional demo companies" });
+    expect(within(table).getAllByRole("row")).toHaveLength(records.companies.length + 1);
+    for (const company of records.companies) {
+      expect(within(table).getByRole("link", { name: company.name })).toHaveAttribute("href", `/demo/companies/${company.id}`);
+    }
+  });
+
+  it("links each deal title to its sample deal detail page", () => {
+    const records = createDemoRecords(new Date("2025-04-15T12:00:00.000Z"));
+    render(<DemoWorkspaceSection section="deals" />);
+
+    const table = screen.getByRole("table", { name: "Fictional demo deals" });
+    expect(within(table).getAllByRole("row")).toHaveLength(records.deals.length + 1);
+    for (const deal of records.deals) {
+      expect(within(table).getByRole("link", { name: deal.title })).toHaveAttribute("href", `/demo/deals/${deal.id}`);
+    }
+  });
+
+  it("links each lead title to its sample lead detail page", () => {
+    const records = createDemoRecords(new Date("2025-04-15T12:00:00.000Z"));
+    render(<DemoWorkspaceSection section="leads" />);
+
+    const table = screen.getByRole("table", { name: "Fictional demo leads" });
+    expect(within(table).getAllByRole("row")).toHaveLength(records.leads.length + 1);
+    for (const lead of records.leads) {
+      expect(within(table).getByRole("link", { name: lead.name })).toHaveAttribute("href", `/demo/leads/${lead.id}`);
+    }
+  });
+
   it("filters every lead status without exposing record mutation actions", () => {
     const records = createDemoRecords(new Date("2025-04-15T12:00:00.000Z"));
     render(<DemoWorkspaceSection section="leads" />);

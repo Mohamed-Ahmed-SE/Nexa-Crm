@@ -6,6 +6,7 @@ import { parsePersistedLeadView, type LeadViewSort } from "@/lib/leads/saved-vie
 
 export type LeadSource = { id: string; name: string };
 export type LeadOwner = { id: string; label: string };
+export type LeadTag = { id: string; name: string; color_token: string | null };
 export type LeadRow = {
   id: string;
   full_name: string;
@@ -21,9 +22,17 @@ export type LeadRow = {
   notes_summary: string | null;
   created_at: string;
   updated_at: string;
+  tags?: LeadTag[];
 };
 
 export type LeadDetail = { lead: LeadRow; source: string | null; ownerLabel: string | null };
+
+export async function listWorkspaceLeadTags(supabase: Supabase, workspaceId: string): Promise<LeadTag[]> {
+  const { data, error } = await supabase.from("tags").select("id, name, color_token")
+    .eq("workspace_id", workspaceId).order("name");
+  if (error) throw new Error("Unable to load workspace tags.");
+  return data ?? [];
+}
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof import("@/lib/supabase/server").createSupabaseServerClient>>>;
 
@@ -121,6 +130,12 @@ export async function listWorkspaceLeads(
     .order(leadSortColumn(params.sort), { ascending: params.sort.endsWith("_asc") })
     .range(start, start + leadPageSize - 1);
 
+  let matchingTagLeadIds: string[] | null = null;
+  if (params.tagId) {
+    matchingTagLeadIds = await fetchMatchingLeadIdsForTag(supabase, workspaceId, params.tagId);
+    if (matchingTagLeadIds.length) recordsQuery = recordsQuery.in("id", matchingTagLeadIds);
+  }
+
   if (params.status !== "all") recordsQuery = recordsQuery.eq("status", params.status);
   if (params.sourceId) recordsQuery = recordsQuery.eq("source_id", params.sourceId);
   if (params.ownerId === "unassigned") recordsQuery = recordsQuery.is("owner_id", null);
@@ -133,8 +148,11 @@ export async function listWorkspaceLeads(
     target_user_id: null,
     target_lead_id: null,
   });
+  const recordsPromise = matchingTagLeadIds?.length === 0
+    ? Promise.resolve({ data: [], error: null, count: 0 })
+    : recordsQuery;
   const [recordsResult, totalResult, newResult, qualifiedResult, sourcesResult, ownersResult, workspaceResult] = await Promise.all([
-    recordsQuery,
+    recordsPromise,
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).is("archived_at", null),
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "new").is("archived_at", null),
     supabase.from("leads").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", "qualified").is("archived_at", null),
@@ -147,13 +165,15 @@ export async function listWorkspaceLeads(
   }
 
   const sources = sourcesResult.data ?? [];
+  const leads = (recordsResult.data ?? []) as LeadRow[];
+  const leadTags = await loadLeadTagsForRows(supabase, workspaceId, leads.map(({ id }) => id));
   const owners = (ownersResult.data ?? []).map(({ user_id }: { user_id: string }) => ({
     id: user_id,
     label: user_id === currentUserId ? currentUserName : `Workspace member · ${user_id.slice(0, 6)}`,
   }));
 
   return {
-    leads: (recordsResult.data ?? []) as LeadRow[],
+    leads: leads.map((lead) => ({ ...lead, tags: leadTags.get(lead.id) ?? [] })),
     totalCount: totalResult.count ?? 0,
     matchedCount: recordsResult.count ?? 0,
     newCount: newResult.count ?? 0,
@@ -162,6 +182,38 @@ export async function listWorkspaceLeads(
     owners,
     currency: workspaceResult.data?.default_currency ?? "USD",
   };
+}
+
+async function fetchMatchingLeadIdsForTag(supabase: Supabase, workspaceId: string, tagId: string) {
+  const matchingIds: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.from("entity_tags").select("entity_id")
+      .eq("workspace_id", workspaceId).eq("entity_type", "lead").eq("tag_id", tagId)
+      .order("entity_id").range(offset, offset + 999);
+    if (error) throw new Error("Unable to filter leads by tag.");
+    const rows = data ?? [];
+    matchingIds.push(...rows.map(({ entity_id }) => entity_id));
+    if (rows.length < 1000) return [...new Set(matchingIds)];
+  }
+}
+
+async function loadLeadTagsForRows(supabase: Supabase, workspaceId: string, leadIds: string[]) {
+  const tagsByLead = new Map<string, LeadTag[]>();
+  if (!leadIds.length) return tagsByLead;
+  const { data: links, error: linksError } = await supabase.from("entity_tags").select("entity_id, tag_id")
+    .eq("workspace_id", workspaceId).eq("entity_type", "lead").in("entity_id", leadIds);
+  if (linksError) throw new Error("Unable to load lead tags.");
+  const tagIds = [...new Set((links ?? []).map(({ tag_id }) => tag_id))];
+  if (!tagIds.length) return tagsByLead;
+  const { data: tags, error: tagsError } = await supabase.from("tags").select("id, name, color_token")
+    .eq("workspace_id", workspaceId).in("id", tagIds);
+  if (tagsError) throw new Error("Unable to load lead tags.");
+  const tagsById = new Map((tags ?? []).map((tag) => [tag.id, tag as LeadTag]));
+  for (const link of links ?? []) {
+    const tag = tagsById.get(link.tag_id);
+    if (tag) tagsByLead.set(link.entity_id, [...(tagsByLead.get(link.entity_id) ?? []), tag]);
+  }
+  return tagsByLead;
 }
 
 function leadSortColumn(sort: LeadViewSort): "updated_at" | "full_name" | "estimated_value" {
@@ -173,7 +225,7 @@ function leadSortColumn(sort: LeadViewSort): "updated_at" | "full_name" | "estim
 export type LeadSavedView = {
   id: string;
   name: string;
-  filters: { q: string; status: LeadSearchParams["status"]; sourceId: string; ownerId: string };
+  filters: { q: string; status: LeadSearchParams["status"]; sourceId: string; ownerId: string; tagId: string };
   sort: LeadViewSort;
   visibleColumns: import("@/lib/leads/saved-view-schema").LeadViewColumn[];
 };

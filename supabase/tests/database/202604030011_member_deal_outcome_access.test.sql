@@ -64,25 +64,22 @@ select throws_ok(
     values ('b1200000-0000-4000-8000-000000000002', 'deal_lost', 'Foreign outcome activity', 'b1100000-0000-4000-8000-000000000001', 'deal', 'b1300000-0000-4000-8000-000000000003')$$,
   '42501', null, 'member cannot insert activity in another workspace'
 );
+update public.tasks set status = 'completed', completed_at = now()
+where id = 'b1400000-0000-4000-8000-000000000001';
 select is(
-  (with changed as (
-    update public.tasks set status = 'completed', completed_at = now()
-    where id = 'b1400000-0000-4000-8000-000000000001' returning id
-  ) select count(*)::integer from changed),
+  (select count(*)::integer from public.tasks where id = 'b1400000-0000-4000-8000-000000000001' and status = 'completed'),
   1, 'member can update a related task for a deal they own'
 );
+update public.tasks set status = 'cancelled', completed_at = null
+where id = 'b1400000-0000-4000-8000-000000000002';
 select is(
-  (with changed as (
-    update public.tasks set status = 'cancelled', completed_at = null
-    where id = 'b1400000-0000-4000-8000-000000000002' returning id
-  ) select count(*)::integer from changed),
+  (select count(*)::integer from public.tasks where id = 'b1400000-0000-4000-8000-000000000002' and status = 'cancelled'),
   0, 'member cannot update a related task for a deal owned by another member'
 );
+update public.tasks set status = 'cancelled', completed_at = null
+where id = 'b1400000-0000-4000-8000-000000000003';
 select is(
-  (with changed as (
-    update public.tasks set status = 'cancelled', completed_at = null
-    where id = 'b1400000-0000-4000-8000-000000000003' returning id
-  ) select count(*)::integer from changed),
+  (select count(*)::integer from public.tasks where id = 'b1400000-0000-4000-8000-000000000003' and status = 'cancelled'),
   0, 'member cannot update a related task in another workspace'
 );
 
@@ -92,11 +89,10 @@ select throws_ok(
     values ('b1200000-0000-4000-8000-000000000001', 'deal_won', 'Viewer outcome activity', 'b1100000-0000-4000-8000-000000000002', 'deal', 'b1300000-0000-4000-8000-000000000001')$$,
   '42501', null, 'viewer cannot insert activity for an owned deal'
 );
+update public.tasks set status = 'cancelled', completed_at = null
+where id = 'b1400000-0000-4000-8000-000000000001';
 select is(
-  (with changed as (
-    update public.tasks set status = 'cancelled', completed_at = null
-    where id = 'b1400000-0000-4000-8000-000000000001' returning id
-  ) select count(*)::integer from changed),
+  (select count(*)::integer from public.tasks where id = 'b1400000-0000-4000-8000-000000000001' and status = 'cancelled'),
   0, 'viewer cannot update a related task for an owned deal'
 );
 

@@ -1,0 +1,88 @@
+.form {
+  display: grid;
+  gap: 18px;
+  max-width: 760px;
+  padding: 20px 0;
+  border-top: 1px solid hsl(var(--border));
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  color: hsl(var(--foreground));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 11px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--surface));
+  color: hsl(var(--foreground));
+  font: inherit;
+  font-weight: 400;
+}
+
+.field input:focus-visible,
+.button:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: hsl(var(--destructive, 0 72% 51%));
+}
+
+.field input:disabled,
+.button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.field span small,
+.help,
+.error {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.field span small,
+.help {
+  color: hsl(var(--muted-foreground));
+}
+
+.help,
+.error {
+  margin: 0;
+}
+
+.error,
+.feedback {
+  color: hsl(var(--destructive, 0 72% 45%));
+}
+
+.button {
+  justify-self: start;
+  min-height: 40px;
+  padding: 8px 13px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: 8px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground, 0 0% 100%));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.feedback {
+  margin: 0;
+  font-size: 12px;
+}
+
+.success {
+  color: hsl(var(--success, 142 55% 32%));
+}

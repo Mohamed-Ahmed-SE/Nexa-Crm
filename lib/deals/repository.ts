@@ -7,11 +7,11 @@ type Supabase = NonNullable<Awaited<ReturnType<typeof import("@/lib/supabase/ser
 export type DealStage = { id: string; name: string; position: number; probability: number; stage_type: "open" | "won" | "lost"; color_token: string | null };
 export type DealOwner = { id: string; label: string };
 export type DealRelation = { name: string } | null;
-type DealRelationFields = { name?: string; full_name?: string };
+type DealRelationFields = { name?: string; full_name?: string; first_name?: string; last_name?: string };
 
 function relationName(relation: DealRelationFields | DealRelationFields[] | null): DealRelation {
   const related = Array.isArray(relation) ? relation[0] : relation;
-  const name = related?.name ?? related?.full_name;
+  const name = related?.name ?? related?.full_name ?? [related?.first_name, related?.last_name].filter(Boolean).join(" ");
   return name ? { name } : null;
 }
 export type DealRow = {
@@ -47,7 +47,7 @@ export async function listWorkspaceDeals(supabase: Supabase, workspaceId: string
   const [pipelinesResult, companyResult, contactResult, ownerResult] = await Promise.all([
     supabase.from("pipelines").select("id, name, is_default").eq("workspace_id", workspaceId).order("is_default", { ascending: false }).order("name"),
     supabase.from("companies").select("id, name").eq("workspace_id", workspaceId).is("archived_at", null).order("name").limit(500),
-    supabase.from("contacts").select("id, full_name, company_id").eq("workspace_id", workspaceId).is("archived_at", null).order("full_name").limit(500),
+    supabase.from("contacts").select("id, first_name, last_name, company_id").eq("workspace_id", workspaceId).is("archived_at", null).order("first_name").order("last_name").limit(500),
     supabase.rpc("list_reassignable_workspace_members", { target_workspace_id: workspaceId, target_user_id: null, target_lead_id: null }),
   ]);
   if (pipelinesResult.error || companyResult.error || contactResult.error || ownerResult.error) throw new Error("Unable to load Deals workspace options.");
@@ -59,7 +59,7 @@ export async function listWorkspaceDeals(supabase: Supabase, workspaceId: string
     : { data: [], error: null };
   if (stagesResult.error) throw new Error("Unable to load pipeline stages.");
   const stages = (stagesResult.data ?? []) as DealStage[];
-  let dealsQuery = supabase.from("deals").select("id, pipeline_id, stage_id, title, company_id, primary_contact_id, amount, currency, probability, expected_close_date, owner_id, priority, description, status, company:companies!deals_workspace_id_company_id_fkey(name), primary_contact:contacts!deals_workspace_id_primary_contact_id_fkey(full_name)")
+  let dealsQuery = supabase.from("deals").select("id, pipeline_id, stage_id, title, company_id, primary_contact_id, amount, currency, probability, expected_close_date, owner_id, priority, description, status, company:companies!deals_workspace_id_company_id_fkey(name), primary_contact:contacts!deals_workspace_id_primary_contact_id_fkey(first_name,last_name)")
     .eq("workspace_id", workspaceId).eq("pipeline_id", pipelineId).is("archived_at", null).order("updated_at", { ascending: false });
   if (params.ownerId === "unassigned") dealsQuery = dealsQuery.is("owner_id", null);
   else if (params.ownerId) dealsQuery = dealsQuery.eq("owner_id", params.ownerId);
@@ -85,7 +85,7 @@ export async function listWorkspaceDeals(supabase: Supabase, workspaceId: string
   return {
     deals, stages, pipelines, owners,
     companies: (companyResult.data ?? []) as DealOption[],
-    contacts: (contactResult.data ?? []).map(({ id, full_name, company_id }: { id: string; full_name: string; company_id: string | null }) => ({ id, name: full_name, company_id })),
+    contacts: (contactResult.data ?? []).map(({ id, first_name, last_name, company_id }: { id: string; first_name: string; last_name: string; company_id: string | null }) => ({ id, name: `${first_name} ${last_name}`, company_id })),
     pipelineId,
   };
 }
@@ -113,13 +113,17 @@ type DealRelationships = Pick<DealDetail, "company" | "contact" | "stage" | "pip
 async function getDealRelationships(supabase: Supabase, workspaceId: string, deal: DealDetail["deal"]): Promise<DealRelationships> {
   const [company, contact, stage, pipeline, source] = await Promise.all([
     deal.company_id ? supabase.from("companies").select("id, name").eq("workspace_id", workspaceId).eq("id", deal.company_id).is("archived_at", null).maybeSingle() : Promise.resolve({ data: null, error: null }),
-    deal.primary_contact_id ? supabase.from("contacts").select("id, full_name").eq("workspace_id", workspaceId).eq("id", deal.primary_contact_id).is("archived_at", null).maybeSingle() : Promise.resolve({ data: null, error: null }),
+    deal.primary_contact_id ? supabase.from("contacts").select("id, first_name, last_name").eq("workspace_id", workspaceId).eq("id", deal.primary_contact_id).is("archived_at", null).maybeSingle() : Promise.resolve({ data: null, error: null }),
     supabase.from("pipeline_stages").select("id, name, stage_type").eq("workspace_id", workspaceId).eq("pipeline_id", deal.pipeline_id).eq("id", deal.stage_id).maybeSingle(),
     supabase.from("pipelines").select("id, name").eq("workspace_id", workspaceId).eq("id", deal.pipeline_id).maybeSingle(),
     deal.source_id ? supabase.from("lead_sources").select("name").eq("workspace_id", workspaceId).eq("id", deal.source_id).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   if (company.error || contact.error || stage.error || pipeline.error || source.error) throw new Error("Unable to load deal relationships.");
-  return { company: company.data, contact: contact.data, stage: stage.data as DealDetail["stage"], pipeline: pipeline.data, source: source.data?.name ?? null };
+  return {
+    company: company.data,
+    contact: contact.data ? { id: contact.data.id, full_name: `${contact.data.first_name} ${contact.data.last_name}` } : null,
+    stage: stage.data as DealDetail["stage"], pipeline: pipeline.data, source: source.data?.name ?? null,
+  };
 }
 
 async function getWorkspaceOwnerIds(supabase: Supabase, workspaceId: string): Promise<Set<string>> {

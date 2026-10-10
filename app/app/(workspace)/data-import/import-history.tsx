@@ -3,8 +3,10 @@
 import { useState, useTransition } from "react";
 import { getImportJobErrors } from "./history-actions";
 import type { ImportJobHistory, ImportRowError } from "@/lib/csv/import-history";
+import { useDateFormat } from "@/components/auth/date-format-provider";
+import { formatCalendarDate } from "@/lib/preferences/date-format";
 
-const dateTime = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC", timeZoneName: "short" });
+const timeWithZone = new Intl.DateTimeFormat("en", { hour: "numeric", minute: "2-digit", timeZone: "UTC", timeZoneName: "short" });
 const countFormat = new Intl.NumberFormat("en");
 const entityLabels = { leads: "Leads", contacts: "Contacts", companies: "Companies" } as const;
 const statusLabels = { completed: "Completed", completed_with_errors: "Completed with errors", failed: "Failed" } as const;
@@ -21,9 +23,11 @@ export function ImportHistory({ jobs, loadError }: Props) {
 }
 
 function HistoryJob({ job }: { job: ImportJobHistory }) {
+  const dateFormat = useDateFormat();
+  const createdAt = new Date(job.created_at);
   return <li className="csv-import-history-job">
     <div className="csv-import-history-summary">
-      <div><strong>{entityLabels[job.entity]}</strong><time dateTime={job.created_at}>{dateTime.format(new Date(job.created_at))}</time></div>
+      <div><strong>{entityLabels[job.entity]}</strong><time dateTime={job.created_at}>{formatCalendarDate(createdAt, dateFormat, { timeZone: "UTC" })}, {timeWithZone.format(createdAt)}</time></div>
       <span className={`csv-import-history-status csv-import-history-status-${job.status}`}>{statusLabels[job.status]}</span>
       <p>{countFormat.format(job.imported_rows)} imported · {countFormat.format(job.rejected_rows)} rejected · {countFormat.format(job.total_rows)} total</p>
     </div>

@@ -5,6 +5,7 @@ import { createTaskAction, rescheduleTaskAction } from "./actions";
 import { TasksWorkspace } from "./tasks-workspace";
 import TasksError from "./error";
 import type { TaskRow } from "@/lib/tasks/repository";
+import type { TaskSearchParams } from "@/lib/tasks/schema";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }) }));
 vi.mock("./actions", () => ({ completeTaskAction: vi.fn(), createTaskAction: vi.fn(), rescheduleTaskAction: vi.fn() }));
@@ -15,7 +16,7 @@ const task: TaskRow = {
   created_by: "c2155412-d8a0-4792-b2bc-f6064b2798f4", related_entity_type: "company", related_entity_id: "012be84b-6794-4e6a-a149-8d92c0a4d110",
   completed_at: null, relation: { id: "012be84b-6794-4e6a-a149-8d92c0a4d110", type: "company", label: "Northstar Labs" },
 };
-const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, params: { view: "my", q: "", type: "all", priority: "all", timezoneOffset: 0, tomorrowTimezoneOffset: 0, page: 1 } as const, canCreate: true, canEdit: true, canReassign: false, currentUserId: task.assigned_to! };
+const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, page: 1 } as TaskSearchParams, canCreate: true, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
 
 describe("TasksWorkspace", () => {
   it("renders persisted task fields, valid relation link, filters, and quick-completion action", () => {
@@ -27,6 +28,36 @@ describe("TasksWorkspace", () => {
     expect(within(row).getByRole("button", { name: "Complete Send revised proposal" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "My Tasks" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("combobox", { name: "Filter by priority" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Sort tasks" })).toHaveValue("due_date");
+  });
+
+  it("keeps title sorting selected in the toolbar and task navigation", () => {
+    render(<TasksWorkspace {...props} matchedCount={26} params={{ ...props.params, view: "today", sort: "title" }} />);
+
+    const sortSelect = screen.getByRole("combobox", { name: "Sort tasks" });
+    expect(sortSelect).toHaveValue("title");
+    expect(within(sortSelect).getByRole("option", { name: "Title (A–Z)" })).toBeInTheDocument();
+    expect(sortSelect.closest("form")).toHaveAttribute("method", "get");
+    expect(sortSelect.closest("form")?.querySelector('[name="page"]')).toBeNull();
+    expect(screen.getByRole("link", { name: "Upcoming" })).toHaveAttribute("href", "/app/tasks?view=upcoming&sort=title");
+    expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/app/tasks?view=today&sort=title&page=2");
+  });
+
+  it("shows export only to permitted users and preserves the active GET filters", () => {
+    const filteredParams = { ...props.params, view: "overdue" as const, q: "proposal", type: "email" as const, priority: "high" as const, sort: "title" as const, page: 4, timezoneOffset: 300, tomorrowTimezoneOffset: 240 };
+    const { rerender } = render(<TasksWorkspace {...props} canExport={false} params={filteredParams} />);
+    expect(screen.queryByRole("button", { name: "Export CSV" })).not.toBeInTheDocument();
+
+    rerender(<TasksWorkspace {...props} canExport params={filteredParams} />);
+    const exportButton = screen.getByRole("button", { name: "Export CSV" });
+    expect(exportButton).toHaveAttribute("formAction", "/app/tasks/export");
+    expect(exportButton).toHaveAttribute("formMethod", "get");
+    const form = exportButton.closest("form");
+    expect(form).toHaveAttribute("method", "get");
+    expect(form?.querySelector('[name="page"]')).toBeNull();
+    for (const [name, value] of Object.entries({ view: "overdue", q: "proposal", type: "email", priority: "high", sort: "title", timezoneOffset: "300", tomorrowTimezoneOffset: "240" })) {
+      expect(form?.querySelector(`[name="${name}"]`)).toHaveValue(value);
+    }
   });
 
   it("links a related lead to its detail page", () => {
