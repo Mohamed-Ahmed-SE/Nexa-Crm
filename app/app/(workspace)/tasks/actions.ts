@@ -16,7 +16,8 @@ export async function createTaskAction(_previous: TaskActionState, form: FormDat
   if (!supabase) return { message: "Authentication is not configured." };
   const parsed = createTaskSchema.safeParse({
     title: value(form, "title"), description: value(form, "description"), type: value(form, "type"), priority: value(form, "priority"),
-    dueAt: normalizeContactDateTime(value(form, "dueAt"), value(form, "timezoneOffset")), assignedTo: value(form, "assignedTo"),
+    dueAt: normalizeContactDateTime(value(form, "dueAt"), value(form, "timezoneOffset")),
+    reminderAt: normalizeReminderDateTime(value(form, "reminderAt"), value(form, "reminderTimezoneOffset")), assignedTo: value(form, "assignedTo"),
     relatedType: value(form, "relatedType"), relatedId: value(form, "relatedId"),
   });
   if (!parsed.success) return { message: "Check the task details and try again.", fieldErrors: parsed.error.flatten().fieldErrors };
@@ -31,7 +32,7 @@ export async function createTaskAction(_previous: TaskActionState, form: FormDat
 
   const { error } = await supabase.from("tasks").insert({
     workspace_id: context.workspaceId, created_by: context.userId, assigned_to: assignedTo, title: parsed.data.title,
-    description: parsed.data.description, task_type: parsed.data.type, priority: parsed.data.priority, due_at: parsed.data.dueAt,
+    description: parsed.data.description, task_type: parsed.data.type, priority: parsed.data.priority, due_at: parsed.data.dueAt, reminder_at: parsed.data.reminderAt,
     status: "open", related_entity_type: parsed.data.relatedType, related_entity_id: parsed.data.relatedId,
   });
   if (error) return { message: "Unable to create this task. Check that the related record is available to you." };
@@ -105,6 +106,14 @@ async function isRelationOwnedBy(supabase: NonNullable<Awaited<ReturnType<typeof
   if (!table) return false;
   const { data, error } = await supabase.from(table).select("id").eq("workspace_id", workspaceId).eq("id", id).eq("owner_id", userId).is("archived_at", null).maybeSingle();
   return !error && Boolean(data);
+}
+
+function normalizeReminderDateTime(localDateTimeInput: string, timezoneOffset: string) {
+  if (!localDateTimeInput) return "";
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(localDateTimeInput)) return localDateTimeInput;
+  const localDate = new Date(`${localDateTimeInput}:00.000Z`);
+  if (Number.isNaN(localDate.getTime()) || localDate.toISOString().slice(0, 16) !== localDateTimeInput) return localDateTimeInput;
+  return normalizeContactDateTime(localDateTimeInput, timezoneOffset);
 }
 
 function relationPath(type: string, id: string) {

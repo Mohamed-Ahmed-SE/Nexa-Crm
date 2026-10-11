@@ -40,6 +40,7 @@ export const createTaskSchema = z.object({
   type: z.enum(taskTypes),
   priority: z.enum(taskPriorities),
   dueAt: z.union([z.string().datetime({ offset: true }), z.literal("")]).optional().transform((value) => value || null),
+  reminderAt: z.union([z.string().datetime({ offset: true }), z.literal("")]).optional().transform((value) => value || null),
   assignedTo: z.union([z.string().uuid(), z.literal("")]).optional().transform((value) => value || null),
   relatedType: z.union([z.enum(taskRelations), z.literal("")]).optional().transform((value) => value || null),
   relatedId: z.union([z.string().uuid(), z.literal("")]).optional().transform((value) => value || null),

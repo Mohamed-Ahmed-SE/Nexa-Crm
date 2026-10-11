@@ -77,7 +77,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
           <td data-label="Type">{typeLabels[task.task_type] ?? task.task_type}</td>
           <th data-label="Task title" scope="row"><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</th>
           <td data-label="Related to">{task.relation ? <Link href={relationHref(task.relation.type, task.relation.id)}>{task.relation.label}</Link> : task.related_entity_id ? <span className="tasks-muted">Related record unavailable</span> : <span className="tasks-muted">No linked record</span>}</td>
-          <td data-label="Due date">{task.due_at ? <time dateTime={task.due_at}>{formatDueDate(task.due_at, dateFormat)}</time> : <span className="tasks-muted">No due date</span>}</td>
+          <td data-label="Due date">{task.due_at ? <time dateTime={task.due_at}>{formatDueDate(task.due_at, dateFormat)}</time> : <span className="tasks-muted">No due date</span>}{task.reminder_at && <small>Reminder: <time dateTime={task.reminder_at}>{formatDueDate(task.reminder_at, dateFormat)}</time></small>}</td>
           <td data-label="Assignee">{task.assigned_to ? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>
           <td data-label="Priority"><span className={`tasks-priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span></td>
           <td data-label="Status"><span className={`tasks-status status-${task.status}`}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span></td>
@@ -104,6 +104,15 @@ function TaskForm({ options, owners, canReassign, currentUserId, onClose, onSave
     const dueAt = formData.get("dueAt");
     const offset = formData.get("timezoneOffset");
     if (typeof dueAt === "string" && dueAt && typeof offset === "string") formData.set("timezoneOffset", offset);
+    const reminderAt = formData.get("reminderAt");
+    if (typeof reminderAt === "string" && reminderAt) {
+      const reminderDate = new Date(reminderAt);
+      if (Number.isNaN(reminderDate.getTime()) || localDateTimeValue(reminderDate) !== reminderAt) {
+        setResult({ message: "Choose a valid local reminder time.", fieldErrors: { reminderAt: ["This time does not exist because the clocks change. Choose another time."] } });
+        return;
+      }
+      formData.set("reminderTimezoneOffset", String(reminderDate.getTimezoneOffset()));
+    }
     setResult(blankState);
     startTransition(async () => {
       const next = await createTaskAction(blankState, formData);
@@ -126,6 +135,7 @@ function TaskForm({ options, owners, canReassign, currentUserId, onClose, onSave
         <label className="tasks-field">Task title<input autoFocus maxLength={200} name="title" required />{errors.title?.[0] && <small>{errors.title[0]}</small>}</label>
         <div className="tasks-form-grid"><label className="tasks-field">Type<select defaultValue="to_do" name="type">{taskTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select></label><label className="tasks-field">Priority<select defaultValue="medium" name="priority">{Object.entries(priorityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
         <label className="tasks-field">Due date<input name="dueAt" type="datetime-local" /><input name="timezoneOffset" type="hidden" value={String(new Date().getTimezoneOffset())} />{errors.dueAt?.[0] && <small>{errors.dueAt[0]}</small>}</label>
+         <label className="tasks-field">Reminder (optional)<input aria-describedby={errors.reminderAt ? "task-reminder-error" : undefined} aria-invalid={Boolean(errors.reminderAt)} name="reminderAt" type="datetime-local" />{errors.reminderAt?.[0] && <small id="task-reminder-error">{errors.reminderAt[0]}</small>}<input name="reminderTimezoneOffset" type="hidden" value={String(new Date().getTimezoneOffset())} /></label>
         <label className="tasks-field">Description<textarea maxLength={5000} name="description" rows={3} /></label>
         <div className="tasks-form-grid"><label className="tasks-field">Related record type<select onChange={(event) => { setRelatedType(event.target.value); setRelatedId(""); }} value={relatedType}><option value="">No related record</option>{Object.entries(relationLabels).filter(([type]) => options.some((option) => option.type === type)).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</select></label><label className="tasks-field">Related record<select disabled={!relatedType} onChange={(event) => setRelatedId(event.target.value)} value={relatedId}><option value="">{relatedType ? "Choose a record" : "No related record"}</option>{relatedOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}</select>{errors.relatedId?.[0] && <small>{errors.relatedId[0]}</small>}</label></div>
         {canReassign ? <label className="tasks-field">Assign to<select defaultValue={currentUserId} name="assignedTo"><option value="">Unassigned</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select>{errors.assignedTo?.[0] && <small>{errors.assignedTo[0]}</small>}</label> : <input name="assignedTo" type="hidden" value={currentUserId} />}

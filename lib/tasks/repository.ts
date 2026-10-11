@@ -9,7 +9,7 @@ export type { TaskOwner } from "@/lib/tasks/owner-labels";
 export type TaskRelation = { id: string; type: "company" | "contact" | "lead" | "deal"; label: string };
 export type TaskRow = {
   id: string; title: string; description: string | null; task_type: string; status: "open" | "completed" | "cancelled";
-  priority: "low" | "medium" | "high"; due_at: string | null; assigned_to: string | null; created_by: string;
+  priority: "low" | "medium" | "high"; due_at: string | null; reminder_at: string | null; assigned_to: string | null; created_by: string;
   related_entity_type: TaskRelation["type"] | null; related_entity_id: string | null; completed_at: string | null;
   relation: TaskRelation | null;
 };
@@ -17,7 +17,7 @@ export type TaskOption = { id: string; type: TaskRelation["type"]; label: string
 
 export async function listWorkspaceTasks(supabase: Supabase, workspaceId: string, userId: string, params: TaskSearchParams, now = new Date()) {
   const { start, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
-  let query = supabase.from("tasks").select("id,title,description,task_type,status,priority,due_at,assigned_to,created_by,related_entity_type,related_entity_id,completed_at", { count: "exact" })
+  let query = supabase.from("tasks").select("id,title,description,task_type,status,priority,due_at,reminder_at,assigned_to,created_by,related_entity_type,related_entity_id,completed_at", { count: "exact" })
     .eq("workspace_id", workspaceId);
   query = params.sort === "title"
     ? query.order("title", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false })

@@ -3,7 +3,7 @@ import "server-only";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
-export type NotificationType = "lead_assigned" | "deal_assigned" | "task_due" | "task_overdue" | "invite_accepted" | "deal_won" | "deal_lost";
+export type NotificationType = "lead_assigned" | "deal_assigned" | "task_due" | "task_overdue" | "task_reminder" | "invite_accepted" | "deal_won" | "deal_lost";
 export type Notification = {
   id: string;
   notification_type: NotificationType;

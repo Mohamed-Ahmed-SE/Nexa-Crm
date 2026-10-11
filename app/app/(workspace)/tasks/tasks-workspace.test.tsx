@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { completeTaskAction, createTaskAction, rescheduleTaskAction } from "./actions";
@@ -12,7 +12,7 @@ vi.mock("./actions", () => ({ completeTaskAction: vi.fn(), createTaskAction: vi.
 
 const task: TaskRow = {
   id: "c2155412-d8a0-4792-b2bc-f6064b2798f4", title: "Send revised proposal", description: "Include the support scope.", task_type: "email",
-  status: "open", priority: "high", due_at: "2026-04-05T14:30:00.000Z", assigned_to: "c2155412-d8a0-4792-b2bc-f6064b2798f4",
+  status: "open", priority: "high", due_at: "2026-04-05T14:30:00.000Z", reminder_at: "2026-04-05T13:30:00.000Z", assigned_to: "c2155412-d8a0-4792-b2bc-f6064b2798f4",
   created_by: "c2155412-d8a0-4792-b2bc-f6064b2798f4", related_entity_type: "company", related_entity_id: "012be84b-6794-4e6a-a149-8d92c0a4d110",
   completed_at: null, relation: { id: "012be84b-6794-4e6a-a149-8d92c0a4d110", type: "company", label: "Northstar Labs" },
 };
@@ -23,6 +23,7 @@ describe("TasksWorkspace", () => {
     render(<TasksWorkspace {...props} />);
     const row = screen.getByRole("row", { name: /Email Send revised proposal/ });
     expect(within(row).getByText("Include the support scope.")).toBeInTheDocument();
+    expect(within(row).getByText(/Reminder:/)).toBeInTheDocument();
     expect(within(row).getByRole("link", { name: "Northstar Labs" })).toHaveAttribute("href", "/app/companies/012be84b-6794-4e6a-a149-8d92c0a4d110");
     expect(within(row).getByText("You")).toBeInTheDocument();
     expect(within(row).getByRole("button", { name: "Complete Send revised proposal" })).toBeInTheDocument();
@@ -124,6 +125,25 @@ describe("TasksWorkspace", () => {
 
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Task created."));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("submits the optional reminder as a local datetime with its browser offset", async () => {
+    vi.mocked(createTaskAction).mockResolvedValueOnce({ ok: true, message: "Task created." });
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+
+    await user.click(screen.getByRole("button", { name: "Add Task" }));
+    await user.type(screen.getByRole("textbox", { name: "Task title" }), "Send the reminder");
+    const reminderInput = screen.getByLabelText("Reminder (optional)");
+    (reminderInput as HTMLInputElement).value = "2026-04-03T10:30";
+    fireEvent.input(reminderInput);
+    expect(reminderInput).toHaveValue("2026-04-03T10:30");
+    await user.click(screen.getByRole("button", { name: "Create task" }));
+
+    expect(await screen.findByText("Task created.")).toBeInTheDocument();
+    const submittedForm = vi.mocked(createTaskAction).mock.calls.at(-1)![1];
+    expect(submittedForm.get("reminderAt")).toBe("2026-04-03T10:30");
+    expect(submittedForm.get("reminderTimezoneOffset")).toBe(String(new Date("2026-04-03T10:30").getTimezoneOffset()));
   });
 
   it("submits the selected date's timezone offset when it differs from the current offset", async () => {

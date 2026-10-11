@@ -83,11 +83,14 @@ describe("NotificationsWorkspace", () => {
   it("opens task reminders through internal task search and leaves invites unlinked", async () => {
     vi.mocked(loadNotificationsAction).mockResolvedValue({ ok: true, notifications: [
       { ...unread, notification_type: "task_overdue", title: "Task overdue", message: "Quarterly follow-up", related_entity_type: null, related_entity_id: null, task_id: "85d644da-6f1c-4709-969a-b6ca20a5c211", href: "/app/tasks?q=Quarterly%20follow-up" },
+      { ...unread, id: "7a065f52-94f0-4609-a77d-bd6c49f67555", notification_type: "task_reminder", title: "Task reminder", message: "Prepare proposal", related_entity_type: null, related_entity_id: null, task_id: "95d644da-6f1c-4709-969a-b6ca20a5c211", href: "/app/tasks?q=Prepare%20proposal" },
       { ...read, notification_type: "invite_accepted", title: "Invitation accepted", related_entity_type: null, related_entity_id: null, task_id: null, href: null },
     ] });
     render(<NotificationsWorkspace />);
 
-    expect(await screen.findByRole("link", { name: "Open task" })).toHaveAttribute("href", "/app/tasks?q=Quarterly%20follow-up");
+    const taskLinks = await screen.findAllByRole("link", { name: "Open task" });
+    expect(taskLinks[0]).toHaveAttribute("href", "/app/tasks?q=Quarterly%20follow-up");
+    expect(taskLinks[1]).toHaveAttribute("href", "/app/tasks?q=Prepare%20proposal");
     const invite = screen.getByText("Invitation accepted").closest("li");
     expect(within(invite!).queryByRole("link")).not.toBeInTheDocument();
   });

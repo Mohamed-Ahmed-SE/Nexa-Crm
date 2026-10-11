@@ -327,8 +327,35 @@ describe("create task action", () => {
       related_entity_type: "company",
       related_entity_id: companyId,
       due_at: "2025-03-04T11:30:00.000Z",
+      reminder_at: null,
     })]);
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/app/tasks");
+  });
+
+  it("normalizes and persists an optional reminder using the submitted local offset", async () => {
+    const state = createTaskDatabase(userId);
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+    const form = createTaskForm();
+    form.set("reminderAt", "2026-04-03T10:30");
+    form.set("reminderTimezoneOffset", "420");
+
+    const result = await createTaskAction({}, form);
+
+    expect(result).toEqual({ ok: true, message: "Task created." });
+    expect(state.insertedTasks[0]).toMatchObject({ reminder_at: "2026-04-03T17:30:00.000Z" });
+  });
+
+  it("rejects an invalid reminder local date without persisting the task", async () => {
+    const state = createTaskDatabase(userId);
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+    const form = createTaskForm();
+    form.set("reminderAt", "2026-02-31T10:30");
+    form.set("reminderTimezoneOffset", "420");
+
+    const result = await createTaskAction({}, form);
+
+    expect(result).toMatchObject({ message: "Check the task details and try again.", fieldErrors: { reminderAt: expect.any(Array) } });
+    expect(state.insertedTasks).toEqual([]);
   });
 
   it("denies a member assigning a task to another user", async () => {
