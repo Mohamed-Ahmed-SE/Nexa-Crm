@@ -176,9 +176,9 @@ export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEdit
     const formData = new FormData();
     formData.set("id", deal.id);
     startTransition(async () => {
-      const result = await duplicateDealAction(formData);
-      setNotice(result.message);
-      if (result.ok) router.refresh();
+      const duplicateResult = await duplicateDealAction(formData);
+      setNotice(duplicateResult.message);
+      if (duplicateResult.ok) router.refresh();
       setPendingIds((ids) => { const next = new Set(ids); next.delete(deal.id); return next; });
     });
   }

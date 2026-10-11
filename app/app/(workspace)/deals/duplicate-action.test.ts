@@ -81,9 +81,7 @@ function duplicateForm(id = dealId) {
 describe("duplicate deal action", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    setupDuplicate();
   });
-
   it("creates an open-stage copy of a won deal with selected source fields", async () => {
     const sourceQuery = setupDuplicate();
     const response = await duplicateDealAction(duplicateForm());
@@ -103,20 +101,15 @@ describe("duplicate deal action", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/app/deals/${newDealId}`);
   });
 
-  it("preserves an eligible source owner when the caller can reassign", async () => {
-    setupDuplicate({ source: { ...sourceDeal, owner_id: sourceOwnerId }, role: "manager", eligibleMembers: [{ user_id: sourceOwnerId }] });
+  it.each([
+    { scenario: "preserves an eligible source owner", eligibleMembers: [{ user_id: sourceOwnerId }], expectedOwnerId: sourceOwnerId },
+    { scenario: "falls back for an ineligible source owner", eligibleMembers: [], expectedOwnerId: userId },
+  ])("$scenario", async ({ eligibleMembers, expectedOwnerId }) => {
+    setupDuplicate({ source: { ...sourceDeal, owner_id: sourceOwnerId }, role: "manager", eligibleMembers });
 
     await duplicateDealAction(duplicateForm());
 
-    expect(mocks.dealInsert).toHaveBeenCalledWith(expect.objectContaining({ owner_id: sourceOwnerId }));
-  });
-
-  it("assigns the current user when the source owner is no longer eligible", async () => {
-    setupDuplicate({ source: { ...sourceDeal, owner_id: sourceOwnerId }, role: "manager", eligibleMembers: [] });
-
-    await duplicateDealAction(duplicateForm());
-
-    expect(mocks.dealInsert).toHaveBeenCalledWith(expect.objectContaining({ owner_id: userId }));
+    expect(mocks.dealInsert).toHaveBeenCalledWith(expect.objectContaining({ owner_id: expectedOwnerId }));
   });
 
   it("does not insert when the source deal cannot be verified", async () => {
