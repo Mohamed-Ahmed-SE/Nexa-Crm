@@ -54,6 +54,21 @@ describe("TasksWorkspace", () => {
     await waitFor(() => expect(completeButton).toBeEnabled());
   });
 
+  it("shows All Tasks only with permission and preserves selection and navigation state", () => {
+    const params = { ...props.params, view: "all" as const, q: "proposal", type: "email" as const, priority: "high" as const, sort: "title" as const, page: 2 };
+    const { rerender } = render(<TasksWorkspace {...props} canReassign={false} params={params} tasks={[]} matchedCount={0} />);
+    expect(screen.queryByRole("link", { name: "All Tasks" })).not.toBeInTheDocument();
+
+    rerender(<TasksWorkspace {...props} canReassign params={params} tasks={[]} matchedCount={0} />);
+    const allTasks = screen.getByRole("link", { name: "All Tasks" });
+    expect(allTasks).toHaveAttribute("aria-current", "page");
+    expect(allTasks).toHaveAttribute("href", "/app/tasks?view=all&q=proposal&type=email&priority=high&sort=title");
+    expect(screen.getByRole("link", { name: "My Tasks" })).toHaveAttribute("href", "/app/tasks?q=proposal&type=email&priority=high&sort=title");
+
+    rerender(<TasksWorkspace {...props} canReassign params={{ ...props.params, view: "all" }} tasks={[]} matchedCount={0} />);
+    expect(screen.getByText("Open tasks in this workspace will appear here.")).toBeInTheDocument();
+  });
+
   it("keeps title sorting selected in the toolbar and task navigation", () => {
     render(<TasksWorkspace {...props} matchedCount={26} params={{ ...props.params, view: "today", sort: "title" }} />);
 

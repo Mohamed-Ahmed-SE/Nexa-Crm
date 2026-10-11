@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 
-export const taskViews = ["my", "today", "upcoming", "overdue", "completed"] as const;
+export const taskViews = ["my", "today", "upcoming", "overdue", "completed", "all"] as const;
 export type TaskView = (typeof taskViews)[number];
 export const taskTypes = ["call", "email", "meeting", "follow_up", "to_do"] as const;
 export const taskPriorities = ["low", "medium", "high"] as const;
@@ -32,6 +32,10 @@ export function parseTaskSearchParams(input: Record<string, string | string[] | 
     page: typeof input.page === "string" ? input.page : "1",
   });
   return parsed.success ? parsed.data : { view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, page: 1 };
+}
+
+export function restrictAllTasksView(params: TaskSearchParams): TaskSearchParams {
+  return params.view === "all" ? { ...params, view: "my" } : params;
 }
 
 export const createTaskSchema = z.object({

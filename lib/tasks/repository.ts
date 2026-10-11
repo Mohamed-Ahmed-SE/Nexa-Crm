@@ -1,7 +1,7 @@
 import "server-only";
 
 import { formatTaskOwners } from "@/lib/tasks/owner-labels";
-import { escapeTaskSearchTerm, taskDateBounds, taskPageSize, type TaskSearchParams } from "@/lib/tasks/schema";
+import { escapeTaskSearchTerm, restrictAllTasksView, taskDateBounds, taskPageSize, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
@@ -15,7 +15,10 @@ export type TaskRow = {
 };
 export type TaskOption = { id: string; type: TaskRelation["type"]; label: string };
 
-export async function listWorkspaceTasks(supabase: Supabase, workspaceId: string, userId: string, params: TaskSearchParams, now = new Date()) {
+export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, userId, params, canReassign, now = new Date() }: {
+  workspaceId: string; userId: string; params: TaskSearchParams; canReassign: boolean; now?: Date;
+}) {
+  const { view } = canReassign ? params : restrictAllTasksView(params);
   const { start, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
   let query = supabase.from("tasks").select("id,title,description,task_type,status,priority,due_at,reminder_at,assigned_to,created_by,related_entity_type,related_entity_id,completed_at", { count: "exact" })
     .eq("workspace_id", workspaceId);
@@ -23,12 +26,13 @@ export async function listWorkspaceTasks(supabase: Supabase, workspaceId: string
     ? query.order("title", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false })
     : query.order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
   query = query.range((params.page - 1) * taskPageSize, params.page * taskPageSize - 1);
-  switch (params.view) {
+  switch (view) {
     case "my": query = query.eq("assigned_to", userId).eq("status", "open"); break;
     case "today": query = query.eq("status", "open").gte("due_at", start.toISOString()).lt("due_at", tomorrow.toISOString()); break;
     case "upcoming": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()); break;
     case "overdue": query = query.eq("status", "open").lt("due_at", start.toISOString()); break;
     case "completed": query = query.eq("status", "completed"); break;
+    case "all": query = query.eq("status", "open"); break;
   }
   if (params.priority !== "all") query = query.eq("priority", params.priority);
   if (params.type !== "all") query = query.eq("task_type", params.type);
