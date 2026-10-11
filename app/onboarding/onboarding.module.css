@@ -1,0 +1,131 @@
+.handoffProgress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 24px;
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.handoffCurrent {
+  color: hsl(var(--primary));
+  font-weight: 650;
+}
+
+.handoffDivider {
+  height: 1px;
+  min-width: 10px;
+  flex: 1;
+  background: hsl(var(--border));
+}
+
+.pipelineSummary {
+  margin: 0 0 20px;
+  padding: 16px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 9px;
+  background: hsl(var(--muted));
+}
+
+.pipelineSummary h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.pipelineSummary p {
+  margin: 5px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.stageList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 13px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stageList li {
+  padding: 5px 9px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--surface));
+  font-size: 11px;
+}
+
+.nextSteps {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.nextStep {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  color: hsl(var(--foreground));
+  text-decoration: none;
+}
+
+.nextStep:hover {
+  border-color: hsl(var(--primary));
+}
+
+.nextStep:focus-visible,
+.continueLink:focus-visible,
+.skipLink:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 3px;
+}
+
+.nextStep strong {
+  font-size: 13px;
+}
+
+.nextStep span {
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.dashboardActions {
+  display: grid;
+  gap: 12px;
+  text-align: center;
+}
+
+.continueLink {
+  display: grid;
+  min-height: 40px;
+  place-items: center;
+  padding: 0 14px;
+  border: 1px solid hsl(var(--primary));
+  border-radius: 7px;
+  background: hsl(var(--primary));
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.continueLink:hover {
+  background: hsl(222 89% 47%);
+}
+
+.skipLink {
+  justify-self: center;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+
+.skipLink:hover {
+  color: hsl(var(--foreground));
+}

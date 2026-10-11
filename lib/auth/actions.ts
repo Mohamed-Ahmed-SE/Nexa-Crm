@@ -83,5 +83,5 @@ export async function createWorkspaceAction(_previous: FormState, formData: Form
     member_job_title: fields.data.jobTitle || null,
   });
   if (error) return { message: "Workspace setup could not be completed. Try again or contact your administrator." };
-  redirect("/app/dashboard");
+  redirect("/onboarding?setup=workspace-created");
 }
