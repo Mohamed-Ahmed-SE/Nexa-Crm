@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { parseCsv } from "@/lib/csv/csv";
 import { importFields, mappedCsvRow, suggestedMappings, validateImportRow, type ImportEntity } from "@/lib/csv/import";
@@ -15,6 +15,7 @@ const entities: { value: ImportEntity; label: string }[] = [{ value: "leads", la
 export function ImportWorkspace({ initialEntity, historyJobs, historyError }: { initialEntity: ImportEntity; historyJobs: ImportJobHistory[]; historyError: boolean }) {
   const [entity, setEntity] = useState<ImportEntity>(initialEntity);
   const [file, setFile] = useState<ParsedFile | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [mapping, setMapping] = useState<number[]>([]);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof importCsvAction>> | null>(null);
@@ -22,7 +23,9 @@ export function ImportWorkspace({ initialEntity, historyJobs, historyError }: { 
   const router = useRouter();
   const fields = importFields[entity];
   const mappedRows = file?.rows.map((row) => mappedCsvRow(file.headers, row, mapping, entity)) ?? [];
-  const invalidCount = mappedRows.filter((row) => !validateImportRow(entity, row).success).length;
+  const validations = mappedRows.map((row) => validateImportRow(entity, row));
+  const invalidCount = validations.filter((validation) => !validation.success).length;
+  const validCount = mappedRows.length - invalidCount;
   const duplicates = new Set<string>();
   const duplicateRows = new Set<number>();
   for (const [index, row] of mappedRows.entries()) {
@@ -34,6 +37,11 @@ export function ImportWorkspace({ initialEntity, historyJobs, historyError }: { 
 
   function chooseEntity(value: ImportEntity) {
     setEntity(value); setFile(null); setMapping([]); setError(""); setSummary(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+  function cancelAndFixFile() {
+    setFile(null); setMapping([]); setError(""); setSummary(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
   async function readFile(selected: File | undefined) {
     if (!selected) return;
@@ -68,14 +76,16 @@ export function ImportWorkspace({ initialEntity, historyJobs, historyError }: { 
     <section className="leads-panel csv-import-panel">
       <div className="leads-form-grid csv-import-controls">
         <label className="leads-field"><span>Import to</span><select value={entity} onChange={(event) => chooseEntity(event.target.value as ImportEntity)}>{entities.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-        <label className="leads-field"><span>CSV file (up to 5 MB)</span><input accept=".csv,text/csv" onChange={(event) => void readFile(event.target.files?.[0])} type="file" /></label>
+        <label className="leads-field"><span>CSV file (up to 5 MB)</span><input accept=".csv,text/csv" onChange={(event) => void readFile(event.target.files?.[0])} ref={fileInputRef} type="file" /></label>
       </div>
       {file && <>
         <section aria-label="Map CSV columns" className="csv-import-mapping"><h2>Map columns</h2><p>Choose which CSV column supplies each field. Required fields are marked.</p><div className="csv-map-list">{fields.map((field, index) => <label className="csv-map-row" key={field.key}><span>{field.label}{field.required ? " · Required" : ""}</span><select aria-label={`${field.label} column`} onChange={(event) => updateMapping(index, Number(event.target.value))} value={mapping[index] ?? -1}><option value={-1}>Do not import</option>{file.headers.map((header, columnIndex) => <option key={`${columnIndex}-${header}`} value={columnIndex}>{header}</option>)}</select></label>)}</div></section>
-        <section aria-label="Import preview" className="csv-import-preview"><h2>Preview and validation</h2><p>{file.rows.length} rows detected · {invalidCount} currently invalid · create-only import</p>{duplicateRows.size > 0 && <p className="csv-import-warning" role="status">Possible duplicates within this file at rows {Array.from(duplicateRows).join(", ")}. They will still be imported as new records.</p>}
-          <div className="companies-table-wrap"><table className="leads-table"><thead><tr><th>CSV row</th>{fields.slice(0, 4).map((field) => <th key={field.key}>{field.label}</th>)}<th>Validation</th></tr></thead><tbody>{mappedRows.slice(0, 10).map((row, index) => { const parsed = validateImportRow(entity, row); return <tr key={index}><td>{index + 2}</td>{fields.slice(0, 4).map((field) => <td key={field.key}>{row[field.key] || "—"}</td>)}<td>{parsed.success ? "Ready" : parsed.error.issues[0]?.message}</td></tr>; })}</tbody></table></div>{file.rows.length > 10 && <p>Showing first 10 rows. All {file.rows.length} rows are validated when imported.</p>}
+        <section aria-label="Import preview" className="csv-import-preview"><h2>Preview and validation</h2><p>{file.rows.length} {file.rows.length === 1 ? "row" : "rows"} detected · {validCount} valid · {invalidCount} invalid · create-only import</p>{duplicateRows.size > 0 && <p className="csv-import-warning" role="status">Possible duplicates within this file at rows {Array.from(duplicateRows).join(", ")}. They will still be imported as new records.</p>}
+          <div className="companies-table-wrap"><table className="leads-table"><thead><tr><th>CSV row</th>{fields.slice(0, 4).map((field) => <th key={field.key}>{field.label}</th>)}<th>Validation</th></tr></thead><tbody>{mappedRows.slice(0, 10).map((row, index) => { const validation = validations[index]; return <tr key={index}><td>{index + 2}</td>{fields.slice(0, 4).map((field) => <td key={field.key}>{row[field.key] || "—"}</td>)}<td>{validation.success ? "Ready" : validation.error.issues[0]?.message}</td></tr>; })}</tbody></table></div>{file.rows.length > 10 && <p>Showing first 10 rows. All {file.rows.length} rows are validated before import.</p>}
+          {invalidCount > 0 && <section aria-labelledby="csv-import-invalid-title" className="csv-import-errors"><h3 id="csv-import-invalid-title">Invalid rows to skip</h3><ul>{validations.map((validation, index) => !validation.success && <li key={index}>Row {index + 2}: {validation.error.issues.map((issue) => issue.message).join("; ")}</li>)}</ul></section>}
+          <p role="status">{validCount} {validCount === 1 ? "valid row passes" : "valid rows pass"} preview validation and will be submitted; {invalidCount} {invalidCount === 1 ? "invalid preview row will" : "invalid preview rows will"} be skipped. Additional import failures will be shown in the summary.</p>
         </section>
-        <footer className="leads-form-footer"><button className="leads-primary-button" disabled={pending || file.rows.length === 0} onClick={submitImport} type="button">{pending ? "Importing…" : `Import ${file.rows.length} rows`}</button></footer>
+        <footer className="leads-form-footer"><button className="leads-secondary-button" disabled={pending} onClick={cancelAndFixFile} type="button">Cancel and fix file</button><button className="leads-primary-button" disabled={pending || file.rows.length === 0} onClick={submitImport} type="button">{pending ? "Importing…" : `Import ${validCount} valid ${validCount === 1 ? "row" : "rows"}${invalidCount ? ` · Skip ${invalidCount} invalid` : ""}`}</button></footer>
       </>}
       {error && <p className="leads-form-message" role="alert">{error}</p>}
       {summary && <section aria-live="polite" className="csv-import-summary"><h2>{summary.ok ? "Import summary" : "Import could not finish"}</h2><p>{summary.message}</p>{summary.errors.length > 0 && <div className="csv-import-errors"><h3>Rows to review</h3><ul>{summary.errors.map((failure) => <li key={failure.row}>Row {failure.row}: {failure.errors.join("; ")}</li>)}</ul></div>}<a className="leads-secondary-button" href={`/app/${entity}`}>View {entity}</a></section>}
