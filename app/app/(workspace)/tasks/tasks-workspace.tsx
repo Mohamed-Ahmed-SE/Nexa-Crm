@@ -24,6 +24,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
   const router = useRouter();
   const [formOpen, setFormOpen] = useState(false);
   const [notice, setNotice] = useState("");
+  const [noticeIsError, setNoticeIsError] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reschedulingTask, setReschedulingTask] = useState<TaskRow | null>(null);
   const pageCount = Math.max(1, Math.ceil(matchedCount / taskPageSize));
@@ -39,11 +40,20 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
   }, [view, q, type, priority, sort, page, currentTimezoneOffset, currentTomorrowTimezoneOffset, router]);
 
   function complete(id: string) {
-    setPendingId(id); setNotice("");
+    setPendingId(id); setNotice(""); setNoticeIsError(false);
     startTransition(async () => {
-      const result = await completeTaskAction(id);
+      let result: TaskActionState;
+      try {
+        result = await completeTaskAction(id);
+      } catch {
+        setNotice("Task could not be completed. Please try again.");
+        setNoticeIsError(true);
+        return;
+      } finally {
+        setPendingId(null);
+      }
       setNotice(result.message ?? "Task could not be completed.");
-      setPendingId(null);
+      setNoticeIsError(!result.ok);
       if (result.ok) router.refresh();
     });
   }
@@ -76,9 +86,9 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
       {tasks.length === 0 && <div className="tasks-empty"><CalendarDays aria-hidden="true" size={22} /><h2>{hasFilters(params) ? "No matching tasks" : params.view === "completed" ? "No completed tasks yet" : "No tasks to show"}</h2><p>{hasFilters(params) ? "Try changing or clearing your search and filters." : params.view === "my" ? "Tasks assigned to you will appear here." : `Tasks in ${viewLabels[params.view].toLowerCase()} will appear here.`}</p>{canCreate && !hasFilters(params) && params.view === "my" && <button className="tasks-secondary-button" onClick={() => setFormOpen(true)} type="button">Create your first task</button>}</div>}
       <nav aria-label="Task pages" className="tasks-pagination"><span>{matchedCount === 0 ? "0 tasks" : `${(params.page - 1) * taskPageSize + 1}–${Math.min(params.page * taskPageSize, matchedCount)} of ${matchedCount} tasks`}</span><div>{params.page <= 1 ? <span aria-disabled="true" className="is-disabled">Previous</span> : <Link href={tasksHref({ ...params, page: params.page - 1 })}>Previous</Link>}<span>Page {params.page} of {pageCount}</span>{params.page >= pageCount ? <span aria-disabled="true" className="is-disabled">Next</span> : <Link href={tasksHref({ ...params, page: params.page + 1 })}>Next</Link>}</div></nav>
     </section>
-    <p aria-live="polite" className="tasks-notice" role="status">{notice}</p>
-    {formOpen && <TaskForm currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} onClose={() => setFormOpen(false)} onSaved={(message) => { setNotice(message); setFormOpen(false); router.refresh(); }} />}
-    {reschedulingTask && <RescheduleTaskDialog task={reschedulingTask} onClose={() => setReschedulingTask(null)} onSaved={(message) => { setNotice(message); setReschedulingTask(null); router.refresh(); }} />}
+    <p aria-live={noticeIsError ? "assertive" : "polite"} className="tasks-notice" role={noticeIsError ? "alert" : "status"}>{notice}</p>
+    {formOpen && <TaskForm currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} onClose={() => setFormOpen(false)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setFormOpen(false); router.refresh(); }} />}
+    {reschedulingTask && <RescheduleTaskDialog task={reschedulingTask} onClose={() => setReschedulingTask(null)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setReschedulingTask(null); router.refresh(); }} />}
   </main>;
 }
 

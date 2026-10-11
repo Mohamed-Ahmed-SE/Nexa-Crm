@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { createTaskAction, rescheduleTaskAction } from "./actions";
+import { completeTaskAction, createTaskAction, rescheduleTaskAction } from "./actions";
 import { TasksWorkspace } from "./tasks-workspace";
 import TasksError from "./error";
 import type { TaskRow } from "@/lib/tasks/repository";
@@ -29,6 +29,28 @@ describe("TasksWorkspace", () => {
     expect(screen.getByRole("link", { name: "My Tasks" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("combobox", { name: "Filter by priority" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort tasks" })).toHaveValue("due_date");
+  });
+
+  it("announces a resolved unsuccessful completion result as an alert", async () => {
+    vi.mocked(completeTaskAction).mockResolvedValueOnce({ message: "Task could not be completed. Refresh and try again." });
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+
+    await user.click(screen.getByRole("button", { name: "Complete Send revised proposal" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Task could not be completed. Refresh and try again.");
+  });
+
+  it("shows a failure alert and re-enables completion after the action rejects", async () => {
+    vi.mocked(completeTaskAction).mockRejectedValueOnce(new Error("Request failed"));
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+    const completeButton = screen.getByRole("button", { name: "Complete Send revised proposal" });
+
+    await user.click(completeButton);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Task could not be completed. Please try again.");
+    await waitFor(() => expect(completeButton).toBeEnabled());
   });
 
   it("keeps title sorting selected in the toolbar and task navigation", () => {
