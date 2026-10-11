@@ -13,8 +13,14 @@ describe("authentication validation", () => {
     expect(resetPasswordSchema.safeParse({ password: "correct-horse-battery", confirmPassword: "different-password" }).success).toBe(false);
   });
 
-  it("requires workspace name while allowing a blank optional job title", () => {
-    expect(createWorkspaceSchema.safeParse({ name: "Acme Sales", jobTitle: "" }).success).toBe(true);
+  it("validates workspace fields and defaults to the allowlisted Standard Sales template", () => {
+    expect(createWorkspaceSchema.parse({ name: "Acme Sales", jobTitle: "" })).toEqual({
+      name: "Acme Sales",
+      jobTitle: "",
+      pipelineTemplate: "standard_sales",
+    });
+    expect(createWorkspaceSchema.safeParse({ name: "Acme Sales", jobTitle: "", pipelineTemplate: "simple_sales" }).success).toBe(true);
+    expect(createWorkspaceSchema.safeParse({ name: "Acme Sales", jobTitle: "", pipelineTemplate: "custom_sql" }).success).toBe(false);
     expect(createWorkspaceSchema.safeParse({ name: " A ", jobTitle: "" }).success).toBe(false);
   });
 });

@@ -37,7 +37,7 @@ vi.mock("@/lib/supabase/env", () => ({ isSupabaseConfigured: mocks.isSupabaseCon
 vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: mocks.createSupabaseServerClient }));
 
 const workspaceContext = { workspaceId: "workspace-1" };
-const defaultPipeline = { id: "pipeline-1", name: "Sales" };
+const defaultPipeline = { id: "pipeline-1", name: "Standard Sales" };
 const seededStages = [
   { name: "Discovery", position: 1 },
   { name: "Qualified", position: 2 },
@@ -98,14 +98,38 @@ describe("onboarding handoff", () => {
     expect(mocks.supabase.rpc).toHaveBeenCalledWith("create_first_workspace", {
       workspace_name: "Acme Sales",
       member_job_title: "Sales lead",
+      pipeline_template: "standard_sales",
     });
+  });
+
+  it("sends only an allowlisted selected pipeline template to the workspace RPC", async () => {
+    const formData = new FormData();
+    formData.set("workspaceName", "Simple Team");
+    formData.set("jobTitle", "Sales lead");
+    formData.set("pipelineTemplate", "simple_sales");
+
+    await expect(createWorkspaceAction({ message: "" }, formData)).rejects.toThrow("REDIRECT:/onboarding?setup=workspace-created");
+    expect(mocks.supabase.rpc).toHaveBeenCalledWith("create_first_workspace", {
+      workspace_name: "Simple Team",
+      member_job_title: "Sales lead",
+      pipeline_template: "simple_sales",
+    });
+  });
+
+  it("rejects a forged pipeline template before calling Supabase", async () => {
+    const formData = new FormData();
+    formData.set("workspaceName", "Acme Sales");
+    formData.set("pipelineTemplate", "custom_sql");
+
+    await expect(createWorkspaceAction({ message: "" }, formData)).resolves.toMatchObject({ message: expect.stringContaining("standard_sales") });
+    expect(mocks.supabase.rpc).not.toHaveBeenCalled();
   });
 
   it("shows the current workspace pipeline and its persisted stages after creation", async () => {
     render(await OnboardingPage({ searchParams: Promise.resolve({ setup: "workspace-created" }) }));
 
-    expect(screen.getByRole("heading", { name: "Standard sales pipeline" })).toBeInTheDocument();
-    expect(screen.getByText("Sales is already set as your workspace’s default pipeline.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your Standard Sales pipeline" })).toBeInTheDocument();
+    expect(screen.getByText("Standard Sales is already set as your workspace’s default pipeline.")).toBeInTheDocument();
     for (const stage of seededStages) expect(screen.getByText(stage.name)).toBeInTheDocument();
     expect(mocks.queryFilters.pipelines).toContainEqual(["workspace_id", "workspace-1"]);
     expect(mocks.queryFilters.pipeline_stages).toContainEqual(["workspace_id", "workspace-1"]);

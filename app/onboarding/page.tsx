@@ -64,13 +64,6 @@ async function getWorkspacePipeline(supabase: SupabaseClient, workspaceId: strin
 function WorkspaceCreation() {
   return (
     <AuthCard description="Set up the shared space for your team. You can configure the rest later." title="Create your workspace">
-      <div aria-label="Onboarding progress" className="onboarding-progress">
-        <span aria-current="step" className="progress-step progress-step-active">Workspace details</span>
-        <span className="progress-divider" />
-        <span className="progress-step">Your role</span>
-        <span className="progress-divider" />
-        <span className="progress-step">Done</span>
-      </div>
       <OnboardingForm />
     </AuthCard>
   );
@@ -102,7 +95,7 @@ function HandoffProgress() {
 function PipelineSummary({ pipeline, stages }: WorkspacePipeline) {
   return (
     <section aria-labelledby="pipeline-title" className={styles.pipelineSummary}>
-      <h2 id="pipeline-title">Standard sales pipeline</h2>
+      <h2 id="pipeline-title">{pipeline ? `Your ${pipeline.name} pipeline` : "Your sales pipeline"}</h2>
       {pipeline ? (
         <>
           <p>{pipeline.name} is already set as your workspace’s default pipeline.</p>

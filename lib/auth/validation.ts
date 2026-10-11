@@ -10,9 +10,13 @@ export const resetPasswordSchema = z.object({ password: passwordSchema, confirmP
     message: "Passwords do not match.",
     path: ["confirmPassword"],
   });
+export const pipelineTemplateSchema = z.enum(["standard_sales", "simple_sales"]);
+export type PipelineTemplate = z.infer<typeof pipelineTemplateSchema>;
+
 export const createWorkspaceSchema = z.object({
   name: z.string().trim().min(2, "Enter at least 2 characters.").max(80),
   jobTitle: z.string().trim().max(100).optional().default(""),
+  pipelineTemplate: pipelineTemplateSchema.default("standard_sales"),
 });
 
 export type FormState = { message: string; success?: boolean };

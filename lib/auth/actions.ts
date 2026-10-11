@@ -69,6 +69,7 @@ export async function createWorkspaceAction(_previous: FormState, formData: Form
   const fields = createWorkspaceSchema.safeParse({
     name: formText(formData, "workspaceName"),
     jobTitle: formText(formData, "jobTitle"),
+    pipelineTemplate: formData.has("pipelineTemplate") ? formText(formData, "pipelineTemplate") : undefined,
   });
   if (!fields.success) return { message: fields.error.issues[0]?.message ?? "Check the workspace details." };
 
@@ -81,6 +82,7 @@ export async function createWorkspaceAction(_previous: FormState, formData: Form
   const { error } = await supabase.rpc("create_first_workspace", {
     workspace_name: fields.data.name,
     member_job_title: fields.data.jobTitle || null,
+    pipeline_template: fields.data.pipelineTemplate,
   });
   if (error) return { message: "Workspace setup could not be completed. Try again or contact your administrator." };
   redirect("/onboarding?setup=workspace-created");

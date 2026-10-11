@@ -1,0 +1,157 @@
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  list-style: none;
+}
+
+.progress li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.progress li:not(:last-child)::after {
+  width: 12px;
+  height: 1px;
+  margin-left: 3px;
+  background: hsl(var(--border));
+  content: "";
+}
+
+.progress li > span:first-child {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid hsl(var(--border));
+  border-radius: 50%;
+  background: hsl(var(--surface));
+  font-size: 9px;
+}
+
+.progress .currentStep {
+  color: hsl(var(--primary));
+  font-weight: 650;
+}
+
+.progress .currentStep > span:first-child {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary-soft));
+}
+
+.templateChoices {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.templateChoices legend {
+  margin-bottom: 9px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.templateChoice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 7px;
+  background: hsl(var(--surface));
+  cursor: pointer;
+}
+
+.templateChoice:has(input:checked) {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary-soft));
+}
+
+.templateChoice input {
+  width: 15px;
+  height: 15px;
+  margin: 2px 0 0;
+  accent-color: hsl(var(--primary));
+}
+
+.templateChoice > span {
+  display: grid;
+  gap: 4px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.templateChoice strong {
+  color: hsl(var(--foreground));
+  font-size: 12px;
+}
+
+.recommended {
+  margin-left: 4px;
+  color: hsl(var(--primary));
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+
+.actions:has(> :only-child) {
+  grid-template-columns: 1fr;
+}
+
+.backButton,
+.skipButton {
+  border: 0;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.backButton:hover,
+.skipButton:hover {
+  color: hsl(var(--foreground));
+}
+
+.skipButton {
+  justify-self: center;
+  padding: 2px 8px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.backButton:focus-visible,
+.skipButton:focus-visible,
+.templateChoice:focus-within {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 3px;
+}
+
+@media (max-width: 380px) {
+  .progress {
+    gap: 4px;
+    font-size: 9px;
+  }
+
+  .progress li {
+    gap: 3px;
+  }
+
+  .progress li:not(:last-child)::after {
+    width: 6px;
+    margin-left: 1px;
+  }
+}
