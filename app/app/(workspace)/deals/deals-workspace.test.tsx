@@ -4,7 +4,7 @@ import type { DealsData } from "@/lib/deals/repository";
 import { DealsWorkspace } from "./deals-workspace";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("./actions", () => ({ createDealAction: vi.fn(), moveDealStageAction: vi.fn(), updateDealAction: vi.fn() }));
+vi.mock("./actions", () => ({ createDealAction: vi.fn(), duplicateDealAction: vi.fn(), moveDealStageAction: vi.fn(), updateDealAction: vi.fn() }));
 const dealsData: DealsData = {
   pipelineId: "pipeline-1",
   pipelines: [{ id: "pipeline-1", name: "New Business" }],
@@ -45,6 +45,17 @@ describe("DealsWorkspace board", () => {
     expect(within(board).getByRole("article", { name: /Won platform deal/ })).toBeInTheDocument();
     expect(within(board).getByRole("article", { name: /Lost services deal/ })).toBeInTheDocument();
     expect(within(board).queryByText(/outcomes are not available yet/i)).not.toBeInTheDocument();
+  });
+
+  it("offers duplication for each deal in both views only when creation is permitted", () => {
+    const { rerender } = render(<DealsWorkspace {...boardProps} canCreate />);
+    expect(screen.getAllByRole("button", { name: "Duplicate" })).toHaveLength(2);
+
+    rerender(<DealsWorkspace {...boardProps} canCreate view="list" />);
+    expect(screen.getAllByRole("button", { name: "Duplicate" })).toHaveLength(2);
+
+    rerender(<DealsWorkspace {...boardProps} view="list" />);
+    expect(screen.queryByRole("button", { name: "Duplicate" })).not.toBeInTheDocument();
   });
 
   it("offers export only when permitted and retains the active filters", () => {

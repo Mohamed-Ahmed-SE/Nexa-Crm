@@ -39,6 +39,53 @@ async function verifyOwner(supabase: NonNullable<Awaited<ReturnType<typeof creat
   return !error && Boolean(eligibleMembers?.some(({ user_id }: { user_id: string }) => user_id === ownerId));
 }
 
+type DuplicateDealSource = {
+  title: string; pipeline_id: string; company_id: string | null; primary_contact_id: string | null;
+  amount: number; currency: string; expected_close_date: string | null; owner_id: string | null;
+  priority: "low" | "medium" | "high"; description: string | null;
+};
+
+async function getDuplicateStage(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, workspaceId: string, pipelineId: string) {
+  const { data: pipeline, error: pipelineError } = await supabase.from("pipelines").select("id").eq("workspace_id", workspaceId).eq("id", pipelineId).maybeSingle();
+  if (pipelineError || !pipeline) return null;
+  const { data: stage, error } = await supabase.from("pipeline_stages").select("id").eq("workspace_id", workspaceId).eq("pipeline_id", pipeline.id).eq("stage_type", "open").eq("is_active", true).order("position").limit(1).maybeSingle();
+  return error ? null : stage;
+}
+
+async function insertDealCopy({ supabase, context, source, stageId }: {
+  supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
+  context: Awaited<ReturnType<typeof requirePermission>>;
+  source: DuplicateDealSource;
+  stageId: string;
+}): Promise<DealActionResult> {
+  const preserveOwner = hasWorkspacePermission(context.role, "crm.reassign") && source.owner_id && await verifyOwner(supabase, context.workspaceId, source.owner_id);
+  const title = `${source.title.slice(0, 200 - " (Copy)".length)} (Copy)`;
+  const { data: createdDeal, error } = await insertDeal(supabase, context.workspaceId, context.userId, source.pipeline_id, stageId, source.currency, {
+    title, companyId: source.company_id, contactId: source.primary_contact_id, amount: Number(source.amount), expectedCloseDate: source.expected_close_date,
+    ownerId: preserveOwner ? source.owner_id : context.userId, priority: source.priority, description: source.description,
+  });
+  if (error || !createdDeal) return failure("Deal could not be duplicated. Check your access and try again.");
+  revalidateDeal(createdDeal.id);
+  const logged = await logDealActivity({ supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: createdDeal.id, activityType: "record_created", subject: "Deal duplicated", body: null });
+  return { ok: true, message: logged ? "Deal duplicated." : "Deal duplicated, but its activity could not be recorded." };
+}
+
+export async function duplicateDealAction(formData: FormData): Promise<DealActionResult> {
+  const context = await requirePermission("crm.create");
+  const parsedId = dealIdSchema.safeParse(textValue(formData, "id"));
+  if (!parsedId.success) return failure("This deal could not be identified.");
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return failure("Authentication is not configured.");
+  const { data: source, error: sourceError } = await supabase.from("deals")
+    .select("id, pipeline_id, title, company_id, primary_contact_id, amount, currency, expected_close_date, owner_id, priority, description, status")
+    .eq("workspace_id", context.workspaceId).eq("id", parsedId.data).is("archived_at", null).maybeSingle();
+  if (sourceError || !source || !["open", "won", "lost"].includes(source.status)) return failure("This deal could not be verified in this workspace.");
+  if (!await verifyRelations(supabase, context.workspaceId, source.company_id, source.primary_contact_id)) return failure("The deal's company or contact is no longer active in this workspace.");
+  const stage = await getDuplicateStage(supabase, context.workspaceId, source.pipeline_id);
+  if (!stage) return failure("The deal's pipeline or an active open stage could not be verified.");
+  return insertDealCopy({ supabase, context, source, stageId: stage.id });
+}
+
 export async function createDealAction(formData: FormData): Promise<DealActionResult> {
   const context = await requirePermission("crm.create");
   const parsed = parseForm(formData);

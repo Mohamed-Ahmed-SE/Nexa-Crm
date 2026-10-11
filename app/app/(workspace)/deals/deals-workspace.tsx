@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Download, LayoutGrid, List, Plus, Search, X } from "lucide-react";
-import { createDealAction, moveDealStageAction, updateDealAction, type DealActionResult } from "./actions";
+import { createDealAction, duplicateDealAction, moveDealStageAction, updateDealAction, type DealActionResult } from "./actions";
 import type { DealOwner, DealRow, DealStage, DealsData } from "@/lib/deals/repository";
 import { getOwnerInitials, isDealOverdue } from "@/lib/deals/presentation";
 import { useCreateIntent } from "../use-create-intent";
@@ -109,9 +109,9 @@ function DealForm({ deal, data, canReassign, currentUserId, onClose }: {
   </dialog>;
 }
 
-function DealCard({ deal, stages, data, canEdit, moving, onEdit, onMove, onDrag, todayIso }: {
-  deal: DealRow; stages: DealStage[]; data: DealsData; canEdit: boolean; moving: boolean; todayIso: string;
-  onEdit: () => void; onMove: (stageId: string) => void; onDrag: (dealId: string) => void;
+function DealCard({ deal, stages, data, canEdit, canDuplicate, moving, onEdit, onMove, onDrag, onDuplicate, todayIso }: {
+  deal: DealRow; stages: DealStage[]; data: DealsData; canEdit: boolean; canDuplicate: boolean; moving: boolean; todayIso: string;
+  onEdit: () => void; onMove: (stageId: string) => void; onDrag: (dealId: string) => void; onDuplicate: () => void;
 }) {
   const dateFormat = useDateFormat();
   const [dragging, setDragging] = useState(false);
@@ -124,7 +124,8 @@ function DealCard({ deal, stages, data, canEdit, moving, onEdit, onMove, onDrag,
     <div className="deals-card-value"><strong>{money(Number(deal.amount), deal.currency)}</strong><span>{deal.probability}% likely</span></div>
     <div className="deals-card-meta"><span>{shortDate(deal.expected_close_date, dateFormat)}</span><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></div>
     <label className="deals-move-control">Move to<select aria-label={`Move ${deal.title} to stage`} disabled={!canEdit || moving || deal.status !== "open"} onChange={(event) => { if (event.target.value) onMove(event.target.value); event.target.value = ""; }} value=""><option value="">Choose stage…</option>{moveOptions.filter(({ id }) => id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></label>
-  </article>;
+     {canDuplicate && <button className="deals-button deals-button-secondary" disabled={moving} onClick={onDuplicate} type="button">Duplicate</button>}
+   </article>;
 }
 
 export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEditAll, canReassign, currentUserId, search, ownerFilter, todayIso, view, createIntent }: Props) {
@@ -168,6 +169,20 @@ export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEdit
     });
   }
 
+  function duplicate(deal: DealRow) {
+    if (!canCreate || pendingIds.has(deal.id)) return;
+    setPendingIds((ids) => new Set(ids).add(deal.id));
+    setNotice("");
+    const formData = new FormData();
+    formData.set("id", deal.id);
+    startTransition(async () => {
+      const result = await duplicateDealAction(formData);
+      setNotice(result.message);
+      if (result.ok) router.refresh();
+      setPendingIds((ids) => { const next = new Set(ids); next.delete(deal.id); return next; });
+    });
+  }
+
   const editDeal = (deal: DealRow) => { if (canEdit(deal) && deal.status === "open") setFormDeal(deal); };
   const tableDeals = deals.filter((deal) => stages.some((stage) => stage.id === deal.stage_id));
 
@@ -186,9 +201,9 @@ export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEdit
       {totals.map((stage) => <div aria-label={`${stage.name}, ${stage.deals.length} deals`} className={`deals-stage stage-${stage.stage_type}`} key={stage.id} onDragOver={(event) => { if (dragDeal && stage.stage_type === "open") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain") || dragDeal; if (id && stage.stage_type === "open") move(id, stage.id); setDragDeal(null); }}>
         <header className="deals-stage-header"><div><span className="deals-stage-indicator" /><h2>{stage.name}</h2><span className="deals-stage-count">{stage.deals.length}</span></div><strong>{stage.total}</strong></header>
 
-        <div className="deals-stage-cards">{stage.deals.length ? stage.deals.map((deal) => <DealCard canEdit={canEdit(deal) && stage.stage_type === "open"} data={data} deal={deal} key={deal.id} moving={pendingIds.has(deal.id)} todayIso={todayIso} onEdit={() => editDeal(deal)} onMove={(stageId) => move(deal.id, stageId)} onDrag={setDragDeal} stages={stages} />) : <p className="deals-stage-empty">No deals in this stage</p>}</div>
+        <div className="deals-stage-cards">{stage.deals.length ? stage.deals.map((deal) => <DealCard canEdit={canEdit(deal) && stage.stage_type === "open"} canDuplicate={canCreate} data={data} deal={deal} key={deal.id} moving={pendingIds.has(deal.id)} todayIso={todayIso} onEdit={() => editDeal(deal)} onMove={(stageId) => move(deal.id, stageId)} onDrag={setDragDeal} onDuplicate={() => duplicate(deal)} stages={stages} />) : <p className="deals-stage-empty">No deals in this stage</p>}</div>
       </div>)}
-    </section> : <section aria-label="Deals list" className="deals-list-wrap"><table className="deals-list"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Primary contact</th><th scope="col">Stage</th><th scope="col">Value</th><th scope="col">Close date</th><th scope="col">Owner</th><th scope="col">Priority</th><th scope="col">Next stage</th></tr></thead><tbody>{tableDeals.map((deal) => <tr key={deal.id}><th scope="row"><div className="deals-list-name-actions"><button className="deals-list-edit" disabled={!canEdit(deal) || deal.status !== "open"} onClick={() => editDeal(deal)} type="button">{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div></th><td>{deal.company?.name ?? "—"}</td><td>{deal.contact?.name ?? "—"}</td><td>{stages.find(({ id }) => id === deal.stage_id)?.name ?? "—"}</td><td>{money(Number(deal.amount), deal.currency)}</td><td><span>{shortDate(deal.expected_close_date, dateFormat)}</span><DealAttention deal={deal} todayIso={todayIso} /></td><td><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></td><td><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span></td><td><label className="sr-only" htmlFor={`list-move-${deal.id}`}>Move {deal.title} to stage</label><select disabled={!canEdit(deal) || pendingIds.has(deal.id) || deal.status !== "open"} id={`list-move-${deal.id}`} onChange={(event) => { if (event.target.value) move(deal.id, event.target.value); event.target.value = ""; }} value=""><option value="">Choose…</option>{stages.filter(({ stage_type, id }) => stage_type === "open" && id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></td></tr>)}</tbody></table></section>}
+    </section> : <section aria-label="Deals list" className="deals-list-wrap"><table className="deals-list"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Primary contact</th><th scope="col">Stage</th><th scope="col">Value</th><th scope="col">Close date</th><th scope="col">Owner</th><th scope="col">Priority</th><th scope="col">Next stage</th>{canCreate && <th scope="col">Actions</th>}</tr></thead><tbody>{tableDeals.map((deal) => <tr key={deal.id}><th scope="row"><div className="deals-list-name-actions"><button className="deals-list-edit" disabled={!canEdit(deal) || deal.status !== "open"} onClick={() => editDeal(deal)} type="button">{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div></th><td>{deal.company?.name ?? "—"}</td><td>{deal.contact?.name ?? "—"}</td><td>{stages.find(({ id }) => id === deal.stage_id)?.name ?? "—"}</td><td>{money(Number(deal.amount), deal.currency)}</td><td><span>{shortDate(deal.expected_close_date, dateFormat)}</span><DealAttention deal={deal} todayIso={todayIso} /></td><td><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></td><td><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span></td><td><label className="sr-only" htmlFor={`list-move-${deal.id}`}>Move {deal.title} to stage</label><select disabled={!canEdit(deal) || pendingIds.has(deal.id) || deal.status !== "open"} id={`list-move-${deal.id}`} onChange={(event) => { if (event.target.value) move(deal.id, event.target.value); event.target.value = ""; }} value=""><option value="">Choose…</option>{stages.filter(({ stage_type, id }) => stage_type === "open" && id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></td>{canCreate && <td><button className="deals-button deals-button-secondary" disabled={pendingIds.has(deal.id)} onClick={() => duplicate(deal)} type="button">Duplicate</button></td>}</tr>)}</tbody></table></section>}
 
     <section aria-label="Pipeline summary" className="deals-summary"><span><strong>{deals.length}</strong> {deals.length === 1 ? "deal" : "deals"}</span><span><strong>{moneyByCurrency(deals.filter(({ status }) => status === "open"))}</strong> open value</span><span><strong>{moneyByCurrency(deals.filter(({ status }) => status === "open"), true)}</strong> weighted pipeline</span></section>
     {formDeal !== undefined && <DealForm canReassign={canReassign} currentUserId={currentUserId} data={data} deal={formDeal} onClose={() => setFormDeal(undefined)} />}
