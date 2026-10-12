@@ -15,6 +15,11 @@ const viewLabels = { my: "My Tasks", today: "Today", upcoming: "Upcoming", overd
 const typeLabels: Record<string, string> = { call: "Call", email: "Email", meeting: "Meeting", follow_up: "Follow-up", to_do: "To-do" };
 const priorityLabels = { low: "Low", medium: "Medium", high: "High" } as const;
 const relationLabels = { company: "Company", contact: "Contact", lead: "Lead", deal: "Deal" } as const;
+const optionalTaskColumns = ["Type", "Related to", "Due date", "Assignee", "Priority", "Status"] as const;
+type OptionalTaskColumn = (typeof optionalTaskColumns)[number];
+const allTaskColumnsVisible: Record<OptionalTaskColumn, boolean> = {
+  Type: true, "Related to": true, "Due date": true, Assignee: true, Priority: true, Status: true,
+};
 
 export function TasksWorkspace({ tasks, owners, options, matchedCount, overview, params, canCreate, canEdit, canReassign, canExport, currentUserId }: {
   tasks: TaskRow[]; owners: TaskOwner[]; options: TaskOption[]; matchedCount: number; overview: TaskOverviewCounts; params: TaskSearchParams;
@@ -27,6 +32,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
   const [noticeIsError, setNoticeIsError] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reschedulingTask, setReschedulingTask] = useState<TaskRow | null>(null);
+  const [visibleColumns, setVisibleColumns] = useState(allTaskColumnsVisible);
   const pageCount = Math.max(1, Math.ceil(matchedCount / taskPageSize));
   const { view, q, type, priority, sort, page, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset, weekStartTimezoneOffset: currentWeekStartTimezoneOffset, nextWeekTimezoneOffset: currentNextWeekTimezoneOffset } = params;
   useEffect(() => {
@@ -75,18 +81,19 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
         <label className="tasks-filter"><span className="sr-only">Filter by type</span><select aria-label="Filter by type" defaultValue={params.type} name="type"><option value="all">All types</option>{taskTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select></label>
         <label className="tasks-filter"><span className="sr-only">Filter by priority</span><select aria-label="Filter by priority" defaultValue={params.priority} name="priority"><option value="all">All priorities</option>{Object.entries(priorityLabels).map(([priority, label]) => <option key={priority} value={priority}>{label}</option>)}</select></label>
         <label className="tasks-filter"><span className="sr-only">Sort tasks</span><select aria-label="Sort tasks" defaultValue={params.sort} name="sort"><option value="due_date">Due date (earliest first)</option><option value="title">Title (A–Z)</option></select></label>
+        <details className="tasks-column-picker"><summary>Customize columns</summary><fieldset><legend>Show columns</legend>{optionalTaskColumns.map((column) => <label key={column}><input checked={visibleColumns[column]} onChange={(event) => setVisibleColumns((current) => ({ ...current, [column]: event.target.checked }))} type="checkbox" />{column}</label>)}</fieldset></details>
         <button className="tasks-secondary-button" type="submit">Apply filters</button>
          {canExport && <button className="tasks-secondary-button" formAction="/app/tasks/export" formMethod="get" type="submit">Export CSV</button>}
       </form>
-      <div className="tasks-table-wrap"><table className="tasks-table"><thead><tr><th scope="col">Type</th><th scope="col">Task title</th><th scope="col">Related to</th><th scope="col">Due date</th><th scope="col">Assignee</th><th scope="col">Priority</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+      <div className="tasks-table-wrap"><table className="tasks-table"><thead><tr>{visibleColumns.Type && <th scope="col">Type</th>}<th scope="col">Task title</th>{visibleColumns["Related to"] && <th scope="col">Related to</th>}{visibleColumns["Due date"] && <th scope="col">Due date</th>}{visibleColumns.Assignee && <th scope="col">Assignee</th>}{visibleColumns.Priority && <th scope="col">Priority</th>}{visibleColumns.Status && <th scope="col">Status</th>}<th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{tasks.map((task) => <tr key={task.id}>
-          <td data-label="Type">{typeLabels[task.task_type] ?? task.task_type}</td>
+          {visibleColumns.Type && <td data-label="Type">{typeLabels[task.task_type] ?? task.task_type}</td>}
           <th data-label="Task title" scope="row"><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</th>
-          <td data-label="Related to">{task.relation ? <Link href={relationHref(task.relation.type, task.relation.id)}>{task.relation.label}</Link> : task.related_entity_id ? <span className="tasks-muted">Related record unavailable</span> : <span className="tasks-muted">No linked record</span>}</td>
-          <td data-label="Due date">{task.due_at ? <time dateTime={task.due_at}>{formatDueDate(task.due_at, dateFormat)}</time> : <span className="tasks-muted">No due date</span>}{task.reminder_at && <small>Reminder: <time dateTime={task.reminder_at}>{formatDueDate(task.reminder_at, dateFormat)}</time></small>}</td>
-          <td data-label="Assignee">{task.assigned_to ? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>
-          <td data-label="Priority"><span className={`tasks-priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span></td>
-          <td data-label="Status"><span className={`tasks-status status-${task.status}`}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span></td>
+          {visibleColumns["Related to"] && <td data-label="Related to">{task.relation ? <Link href={relationHref(task.relation.type, task.relation.id)}>{task.relation.label}</Link> : task.related_entity_id ? <span className="tasks-muted">Related record unavailable</span> : <span className="tasks-muted">No linked record</span>}</td>}
+          {visibleColumns["Due date"] && <td data-label="Due date">{task.due_at ? <time dateTime={task.due_at}>{formatDueDate(task.due_at, dateFormat)}</time> : <span className="tasks-muted">No due date</span>}{task.reminder_at && <small>Reminder: <time dateTime={task.reminder_at}>{formatDueDate(task.reminder_at, dateFormat)}</time></small>}</td>}
+          {visibleColumns.Assignee && <td data-label="Assignee">{task.assigned_to ? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>}
+          {visibleColumns.Priority && <td data-label="Priority"><span className={`tasks-priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span></td>}
+          {visibleColumns.Status && <td data-label="Status"><span className={`tasks-status status-${task.status}`}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span></td>}
           <td data-label="Actions">{canEdit && task.status === "open" && <div className="tasks-row-actions"><button aria-label={task.due_at ? `Reschedule ${task.title}` : `Set due date for ${task.title}`} className="tasks-secondary-button" onClick={() => setReschedulingTask(task)} type="button">{task.due_at ? "Reschedule" : "Set due date"}</button><button aria-label={`Complete ${task.title}`} className="tasks-complete-button" disabled={pendingId === task.id} onClick={() => complete(task.id)} type="button"><Check aria-hidden="true" size={14} />{pendingId === task.id ? "Completing…" : "Complete"}</button></div>}</td>
         </tr>)}</tbody></table></div>
       {tasks.length === 0 && <div className="tasks-empty"><CalendarDays aria-hidden="true" size={22} /><h2>{hasFilters(params) ? "No matching tasks" : params.view === "completed" ? "No completed tasks yet" : "No tasks to show"}</h2><p>{hasFilters(params) ? "Try changing or clearing your search and filters." : params.view === "my" ? "Tasks assigned to you will appear here." : params.view === "all" ? "Open tasks in this workspace will appear here." : `Tasks in ${viewLabels[params.view].toLowerCase()} will appear here.`}</p>{canCreate && !hasFilters(params) && params.view === "my" && <button className="tasks-secondary-button" onClick={() => setFormOpen(true)} type="button">Create your first task</button>}</div>}

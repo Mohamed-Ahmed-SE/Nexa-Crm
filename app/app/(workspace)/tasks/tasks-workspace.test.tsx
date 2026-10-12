@@ -18,6 +18,14 @@ const task: TaskRow = {
 };
 const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, overview: { dueToday: 3, overdue: 2, completedThisWeek: 7, upcoming: 11 }, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, page: 1 } as TaskSearchParams, canCreate: true, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
 
+function expectTaskTableColumnsAligned() {
+  const table = screen.getByRole("table");
+  const headers = within(table).getAllByRole("columnheader").map((header) => header.textContent?.trim());
+  const row = within(table).getAllByRole("row")[1];
+  const cellLabels = Array.from(row.querySelectorAll("th, td")).map((cell) => cell.getAttribute("data-label"));
+  expect(cellLabels).toEqual(headers);
+}
+
 describe("TasksWorkspace", () => {
   it("renders the four workspace task overview counts", () => {
     render(<TasksWorkspace {...props} />);
@@ -44,6 +52,45 @@ describe("TasksWorkspace", () => {
     expect(screen.getByRole("link", { name: "My Tasks" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("combobox", { name: "Filter by priority" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Sort tasks" })).toHaveValue("due_date");
+  });
+
+  it("shows optional columns by default and aligns each header with its responsive cell label", async () => {
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+    await user.click(screen.getByText("Customize columns"));
+    const table = screen.getByRole("table");
+    const row = within(table).getAllByRole("row")[1];
+
+    for (const column of ["Type", "Related to", "Due date", "Assignee", "Priority", "Status"]) {
+      expect(screen.getByRole("checkbox", { name: column })).toBeChecked();
+      expect(within(table).getByRole("columnheader", { name: column })).toBeInTheDocument();
+      expect(row.querySelector(`[data-label="${column}"]`)).toBeInTheDocument();
+    }
+    expectTaskTableColumnsAligned();
+  });
+
+  it("hides and restores an optional column without hiding task title or actions", async () => {
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+
+    await user.click(screen.getByText("Customize columns"));
+    const typeColumn = screen.getByRole("checkbox", { name: "Type" });
+    const table = screen.getByRole("table");
+    const row = within(table).getAllByRole("row")[1];
+
+    await user.click(typeColumn);
+    expect(within(table).queryByRole("columnheader", { name: "Type" })).not.toBeInTheDocument();
+    expect(row.querySelector('[data-label="Type"]')).toBeNull();
+    expect(within(table).getByRole("columnheader", { name: "Task title" })).toBeInTheDocument();
+    expect(within(row).getByRole("rowheader", { name: /Send revised proposal/ })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Actions" })).toBeInTheDocument();
+    expect(row.querySelector('[data-label="Actions"]')).toBeInTheDocument();
+    expectTaskTableColumnsAligned();
+
+    await user.click(typeColumn);
+    expect(within(table).getByRole("columnheader", { name: "Type" })).toBeInTheDocument();
+    expect(row.querySelector('[data-label="Type"]')).toHaveTextContent("Email");
+    expectTaskTableColumnsAligned();
   });
 
   it("announces a resolved unsuccessful completion result as an alert", async () => {
