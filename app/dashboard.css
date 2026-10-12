@@ -460,6 +460,12 @@
 .tasks-page { padding-top: 24px; }
 .tasks-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 17px; }
 .tasks-header .page-description { margin-top: 4px; }
+.tasks-overview { margin-bottom: 16px; }
+.tasks-overview dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin: 0; }
+.tasks-overview-card { min-width: 0; padding: 13px 14px; border: 1px solid hsl(var(--border)); border-radius: 9px; background: hsl(var(--surface)); }
+.tasks-overview-card dt { color: hsl(var(--muted-foreground)); font-size: 11px; font-weight: 550; }
+.tasks-overview-card dd { margin: 8px 0 0; font-size: clamp(21px, 1.75vw, 26px); font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: -.025em; line-height: 1.15; }
+@media (max-width: 700px) { .tasks-overview dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .tasks-primary-button, .tasks-secondary-button, .tasks-complete-button, .tasks-close-button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 7px; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 0 12px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 150ms ease, border-color 150ms ease; }
 .tasks-primary-button { border-color: hsl(var(--foreground)); background: hsl(var(--foreground)); color: white; }
 .tasks-primary-button:hover:not(:disabled) { background: hsl(var(--foreground) / .88); }

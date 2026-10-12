@@ -1,6 +1,6 @@
 import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
-import { listTaskOptions, listWorkspaceTasks } from "@/lib/tasks/repository";
+import { countWorkspaceTaskOverview, listTaskOptions, listWorkspaceTasks } from "@/lib/tasks/repository";
 import { parseTaskSearchParams, restrictAllTasksView } from "@/lib/tasks/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { TasksWorkspace } from "./tasks-workspace";
@@ -13,10 +13,11 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const supabase = await createSupabaseServerClient();
   if (!supabase) throw new Error("Supabase server client is unavailable.");
   const canCreate = hasWorkspacePermission(context.role, "crm.create");
-  const [data, options] = await Promise.all([
+  const [data, options, overview] = await Promise.all([
     listWorkspaceTasks(supabase, { workspaceId: context.workspaceId, userId: context.userId, params, canReassign }),
     canCreate ? listTaskOptions(supabase, context.workspaceId, context.userId, canReassign) : Promise.resolve([]),
+    countWorkspaceTaskOverview(supabase, context.workspaceId, params),
   ]);
-  return <TasksWorkspace tasks={data.tasks} owners={data.owners} options={options} matchedCount={data.matchedCount} params={params}
+  return <TasksWorkspace tasks={data.tasks} owners={data.owners} options={options} matchedCount={data.matchedCount} overview={overview} params={params}
     canCreate={canCreate} canEdit={hasWorkspacePermission(context.role, "crm.edit.own")} canReassign={canReassign} canExport={hasWorkspacePermission(context.role, "data.export")} currentUserId={context.userId} />;
 }

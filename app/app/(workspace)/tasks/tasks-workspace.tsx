@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { CalendarDays, Check, Plus } from "lucide-react";
 import { completeTaskAction, createTaskAction, rescheduleTaskAction, type TaskActionState } from "./actions";
 import { taskPageSize, taskTypes, type TaskSearchParams } from "@/lib/tasks/schema";
-import type { TaskOption, TaskOwner, TaskRow } from "@/lib/tasks/repository";
+import type { TaskOption, TaskOwner, TaskOverviewCounts, TaskRow } from "@/lib/tasks/repository";
 import { useDateFormat } from "@/components/auth/date-format-provider";
 import { formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
 
@@ -16,8 +16,8 @@ const typeLabels: Record<string, string> = { call: "Call", email: "Email", meeti
 const priorityLabels = { low: "Low", medium: "Medium", high: "High" } as const;
 const relationLabels = { company: "Company", contact: "Contact", lead: "Lead", deal: "Deal" } as const;
 
-export function TasksWorkspace({ tasks, owners, options, matchedCount, params, canCreate, canEdit, canReassign, canExport, currentUserId }: {
-  tasks: TaskRow[]; owners: TaskOwner[]; options: TaskOption[]; matchedCount: number; params: TaskSearchParams;
+export function TasksWorkspace({ tasks, owners, options, matchedCount, overview, params, canCreate, canEdit, canReassign, canExport, currentUserId }: {
+  tasks: TaskRow[]; owners: TaskOwner[]; options: TaskOption[]; matchedCount: number; overview: TaskOverviewCounts; params: TaskSearchParams;
   canCreate: boolean; canEdit: boolean; canReassign: boolean; canExport: boolean; currentUserId: string;
 }) {
   const dateFormat = useDateFormat();
@@ -28,16 +28,21 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reschedulingTask, setReschedulingTask] = useState<TaskRow | null>(null);
   const pageCount = Math.max(1, Math.ceil(matchedCount / taskPageSize));
-  const { view, q, type, priority, sort, page, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset } = params;
+  const { view, q, type, priority, sort, page, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset, weekStartTimezoneOffset: currentWeekStartTimezoneOffset, nextWeekTimezoneOffset: currentNextWeekTimezoneOffset } = params;
   useEffect(() => {
     const now = new Date();
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const daysSinceMonday = (now.getDay() + 6) % 7;
+    const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysSinceMonday);
+    const nextWeek = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 7);
     const timezoneOffset = now.getTimezoneOffset();
     const tomorrowTimezoneOffset = tomorrow.getTimezoneOffset();
-    if (currentTimezoneOffset !== timezoneOffset || currentTomorrowTimezoneOffset !== tomorrowTimezoneOffset) {
-      router.replace(tasksHref({ view, q, type, priority, sort, page, timezoneOffset, tomorrowTimezoneOffset }));
+    const weekStartTimezoneOffset = weekStart.getTimezoneOffset();
+    const nextWeekTimezoneOffset = nextWeek.getTimezoneOffset();
+    if (currentTimezoneOffset !== timezoneOffset || currentTomorrowTimezoneOffset !== tomorrowTimezoneOffset || currentWeekStartTimezoneOffset !== weekStartTimezoneOffset || currentNextWeekTimezoneOffset !== nextWeekTimezoneOffset) {
+      router.replace(tasksHref({ view, q, type, priority, sort, page, timezoneOffset, tomorrowTimezoneOffset, weekStartTimezoneOffset, nextWeekTimezoneOffset }));
     }
-  }, [view, q, type, priority, sort, page, currentTimezoneOffset, currentTomorrowTimezoneOffset, router]);
+  }, [view, q, type, priority, sort, page, currentTimezoneOffset, currentTomorrowTimezoneOffset, currentWeekStartTimezoneOffset, currentNextWeekTimezoneOffset, router]);
 
   function complete(id: string) {
     setPendingId(id); setNotice(""); setNoticeIsError(false);
@@ -61,10 +66,11 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
 
   return <main className="page-container tasks-page">
     <header className="tasks-header"><div><h1 className="page-title">Tasks</h1><p className="page-description">Keep follow-ups and sales activities organized.</p></div>{canCreate && <button className="tasks-primary-button" onClick={() => setFormOpen(true)} type="button"><Plus aria-hidden="true" size={16} />Add Task</button>}</header>
+    <TaskOverviewCards counts={overview} />
     <nav aria-label="Task views" className="tasks-tabs">{Object.entries(viewLabels).filter(([view]) => view !== "all" || canReassign).map(([view, label]) => <Link aria-current={params.view === view ? "page" : undefined} className={params.view === view ? "is-active" : ""} href={tasksHref({ ...params, view: view as TaskSearchParams["view"], page: 1 })} key={view}>{label}</Link>)}</nav>
     <section aria-label="Tasks" className="tasks-panel">
       <form action="/app/tasks" className="tasks-toolbar" method="get">
-        <input name="view" type="hidden" value={params.view} /><input name="timezoneOffset" type="hidden" value={params.timezoneOffset} /><input name="tomorrowTimezoneOffset" type="hidden" value={params.tomorrowTimezoneOffset} />
+        <input name="view" type="hidden" value={params.view} /><input name="timezoneOffset" type="hidden" value={params.timezoneOffset} /><input name="tomorrowTimezoneOffset" type="hidden" value={params.tomorrowTimezoneOffset} /><input name="weekStartTimezoneOffset" type="hidden" value={params.weekStartTimezoneOffset} /><input name="nextWeekTimezoneOffset" type="hidden" value={params.nextWeekTimezoneOffset} />
         <label className="tasks-search"><span className="sr-only">Search tasks</span><input autoComplete="off" defaultValue={params.q} maxLength={100} name="q" placeholder="Search task title or description" type="search" /></label>
         <label className="tasks-filter"><span className="sr-only">Filter by type</span><select aria-label="Filter by type" defaultValue={params.type} name="type"><option value="all">All types</option>{taskTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select></label>
         <label className="tasks-filter"><span className="sr-only">Filter by priority</span><select aria-label="Filter by priority" defaultValue={params.priority} name="priority"><option value="all">All priorities</option>{Object.entries(priorityLabels).map(([priority, label]) => <option key={priority} value={priority}>{label}</option>)}</select></label>
@@ -90,6 +96,19 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, params, c
     {formOpen && <TaskForm currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} onClose={() => setFormOpen(false)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setFormOpen(false); router.refresh(); }} />}
     {reschedulingTask && <RescheduleTaskDialog task={reschedulingTask} onClose={() => setReschedulingTask(null)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setReschedulingTask(null); router.refresh(); }} />}
   </main>;
+}
+
+function TaskOverviewCards({ counts }: { counts: TaskOverviewCounts }) {
+  const cards = [
+    { label: "Due Today", count: counts.dueToday },
+    { label: "Overdue", count: counts.overdue },
+    { label: "Completed This Week", count: counts.completedThisWeek },
+    { label: "Upcoming", count: counts.upcoming },
+  ];
+  return <section aria-label="Task overview" className="tasks-overview">
+    <h2 className="sr-only">Task overview</h2>
+    <dl>{cards.map(({ label, count }) => <div className="tasks-overview-card" key={label}><dt>{label}</dt><dd>{count.toLocaleString()}</dd></div>)}</dl>
+  </section>;
 }
 
 function TaskForm({ options, owners, canReassign, currentUserId, onClose, onSaved }: { options: TaskOption[]; owners: TaskOwner[]; canReassign: boolean; currentUserId: string; onClose: () => void; onSaved: (message: string) => void }) {
@@ -201,4 +220,4 @@ function relationHref(type: TaskRow["related_entity_type"] & string, id: string)
   return `/app/${section}/${id}`;
 }
 function hasFilters(params: TaskSearchParams) { return Boolean(params.q || params.priority !== "all" || params.type !== "all"); }
-function tasksHref(params: TaskSearchParams) { const query = new URLSearchParams(); if (params.view !== "my") query.set("view", params.view); if (params.q) query.set("q", params.q); if (params.type !== "all") query.set("type", params.type); if (params.priority !== "all") query.set("priority", params.priority); if (params.sort !== "due_date") query.set("sort", params.sort); if (params.timezoneOffset !== 0 || params.tomorrowTimezoneOffset !== 0) { query.set("timezoneOffset", String(params.timezoneOffset)); query.set("tomorrowTimezoneOffset", String(params.tomorrowTimezoneOffset)); } if (params.page > 1) query.set("page", String(params.page)); const value = query.toString(); return `/app/tasks${value ? `?${value}` : ""}`; }
+function tasksHref(params: TaskSearchParams) { const query = new URLSearchParams(); if (params.view !== "my") query.set("view", params.view); if (params.q) query.set("q", params.q); if (params.type !== "all") query.set("type", params.type); if (params.priority !== "all") query.set("priority", params.priority); if (params.sort !== "due_date") query.set("sort", params.sort); if (params.timezoneOffset !== 0 || params.tomorrowTimezoneOffset !== 0 || params.weekStartTimezoneOffset !== 0 || params.nextWeekTimezoneOffset !== 0) { query.set("timezoneOffset", String(params.timezoneOffset)); query.set("tomorrowTimezoneOffset", String(params.tomorrowTimezoneOffset)); query.set("weekStartTimezoneOffset", String(params.weekStartTimezoneOffset)); query.set("nextWeekTimezoneOffset", String(params.nextWeekTimezoneOffset)); } if (params.page > 1) query.set("page", String(params.page)); const value = query.toString(); return `/app/tasks${value ? `?${value}` : ""}`; }

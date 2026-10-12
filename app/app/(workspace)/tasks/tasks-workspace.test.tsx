@@ -16,9 +16,23 @@ const task: TaskRow = {
   created_by: "c2155412-d8a0-4792-b2bc-f6064b2798f4", related_entity_type: "company", related_entity_id: "012be84b-6794-4e6a-a149-8d92c0a4d110",
   completed_at: null, relation: { id: "012be84b-6794-4e6a-a149-8d92c0a4d110", type: "company", label: "Northstar Labs" },
 };
-const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, page: 1 } as TaskSearchParams, canCreate: true, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
+const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, overview: { dueToday: 3, overdue: 2, completedThisWeek: 7, upcoming: 11 }, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, page: 1 } as TaskSearchParams, canCreate: true, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
 
 describe("TasksWorkspace", () => {
+  it("renders the four workspace task overview counts", () => {
+    render(<TasksWorkspace {...props} />);
+    const overview = screen.getByRole("region", { name: "Task overview" });
+
+    expect(within(overview).getByText("Due Today")).toBeInTheDocument();
+    expect(within(overview).getByText("3")).toBeInTheDocument();
+    expect(within(overview).getByText("Overdue")).toBeInTheDocument();
+    expect(within(overview).getByText("2")).toBeInTheDocument();
+    expect(within(overview).getByText("Completed This Week")).toBeInTheDocument();
+    expect(within(overview).getByText("7")).toBeInTheDocument();
+    expect(within(overview).getByText("Upcoming")).toBeInTheDocument();
+    expect(within(overview).getByText("11")).toBeInTheDocument();
+  });
+
   it("renders persisted task fields, valid relation link, filters, and quick-completion action", () => {
     render(<TasksWorkspace {...props} />);
     const row = screen.getByRole("row", { name: /Email Send revised proposal/ });
@@ -82,7 +96,7 @@ describe("TasksWorkspace", () => {
   });
 
   it("shows export only to permitted users and preserves the active GET filters", () => {
-    const filteredParams = { ...props.params, view: "overdue" as const, q: "proposal", type: "email" as const, priority: "high" as const, sort: "title" as const, page: 4, timezoneOffset: 300, tomorrowTimezoneOffset: 240 };
+    const filteredParams = { ...props.params, view: "overdue" as const, q: "proposal", type: "email" as const, priority: "high" as const, sort: "title" as const, page: 4, timezoneOffset: 300, tomorrowTimezoneOffset: 240, weekStartTimezoneOffset: 300, nextWeekTimezoneOffset: 240 };
     const { rerender } = render(<TasksWorkspace {...props} canExport={false} params={filteredParams} />);
     expect(screen.queryByRole("button", { name: "Export CSV" })).not.toBeInTheDocument();
 
@@ -93,7 +107,7 @@ describe("TasksWorkspace", () => {
     const form = exportButton.closest("form");
     expect(form).toHaveAttribute("method", "get");
     expect(form?.querySelector('[name="page"]')).toBeNull();
-    for (const [name, value] of Object.entries({ view: "overdue", q: "proposal", type: "email", priority: "high", sort: "title", timezoneOffset: "300", tomorrowTimezoneOffset: "240" })) {
+    for (const [name, value] of Object.entries({ view: "overdue", q: "proposal", type: "email", priority: "high", sort: "title", timezoneOffset: "300", tomorrowTimezoneOffset: "240", weekStartTimezoneOffset: "300", nextWeekTimezoneOffset: "240" })) {
       expect(form?.querySelector(`[name="${name}"]`)).toHaveValue(value);
     }
   });

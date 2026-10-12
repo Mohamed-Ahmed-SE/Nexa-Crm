@@ -16,6 +16,8 @@ const paramsSchema = z.object({
   sort: z.enum(taskSortOrders).default("due_date"),
   timezoneOffset: z.number().int().min(-840).max(840).catch(0),
   tomorrowTimezoneOffset: z.number().int().min(-840).max(840).catch(0),
+  weekStartTimezoneOffset: z.number().int().min(-840).max(840).catch(0),
+  nextWeekTimezoneOffset: z.number().int().min(-840).max(840).catch(0),
   page: z.coerce.number().int().min(1).max(10000).default(1),
 });
 export type TaskSearchParams = z.infer<typeof paramsSchema>;
@@ -29,9 +31,11 @@ export function parseTaskSearchParams(input: Record<string, string | string[] | 
     sort: typeof input.sort === "string" ? input.sort : "due_date",
     timezoneOffset: typeof input.timezoneOffset === "string" ? Number(input.timezoneOffset) : 0,
     tomorrowTimezoneOffset: typeof input.tomorrowTimezoneOffset === "string" ? Number(input.tomorrowTimezoneOffset) : 0,
+    weekStartTimezoneOffset: typeof input.weekStartTimezoneOffset === "string" ? Number(input.weekStartTimezoneOffset) : 0,
+    nextWeekTimezoneOffset: typeof input.nextWeekTimezoneOffset === "string" ? Number(input.nextWeekTimezoneOffset) : 0,
     page: typeof input.page === "string" ? input.page : "1",
   });
-  return parsed.success ? parsed.data : { view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, page: 1 };
+  return parsed.success ? parsed.data : { view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, page: 1 };
 }
 
 export function restrictAllTasksView(params: TaskSearchParams): TaskSearchParams {
@@ -100,5 +104,16 @@ export function taskDateBounds(now: Date, timezoneOffset: number, tomorrowTimezo
   const start = Date.UTC(year, month - 1, day) + timezoneOffset * 60_000;
   const tomorrow = Date.UTC(year, month - 1, day + 1) + tomorrowTimezoneOffset * 60_000;
   return { start: new Date(start), tomorrow: new Date(tomorrow) };
+}
+
+export function taskWeekBounds(now: Date, timezoneOffset: number, weekStartTimezoneOffset: number, nextWeekTimezoneOffset: number) {
+  const localNow = new Date(now.getTime() - timezoneOffset * 60_000);
+  const [year, month, day] = localNow.toISOString().slice(0, 10).split("-").map(Number);
+  const daysSinceMonday = (localNow.getUTCDay() + 6) % 7;
+  const weekStart = Date.UTC(year, month - 1, day - daysSinceMonday);
+  return {
+    start: new Date(weekStart + weekStartTimezoneOffset * 60_000),
+    end: new Date(weekStart + 7 * 24 * 60 * 60_000 + nextWeekTimezoneOffset * 60_000),
+  };
 }
 

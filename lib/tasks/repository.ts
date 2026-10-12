@@ -1,7 +1,7 @@
 import "server-only";
 
 import { formatTaskOwners } from "@/lib/tasks/owner-labels";
-import { escapeTaskSearchTerm, restrictAllTasksView, taskDateBounds, taskPageSize, type TaskSearchParams } from "@/lib/tasks/schema";
+import { escapeTaskSearchTerm, restrictAllTasksView, taskDateBounds, taskPageSize, taskWeekBounds, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
@@ -14,6 +14,26 @@ export type TaskRow = {
   relation: TaskRelation | null;
 };
 export type TaskOption = { id: string; type: TaskRelation["type"]; label: string };
+export type TaskOverviewCounts = { dueToday: number; overdue: number; completedThisWeek: number; upcoming: number };
+
+export async function countWorkspaceTaskOverview(supabase: Supabase, workspaceId: string, params: Pick<TaskSearchParams, "timezoneOffset" | "tomorrowTimezoneOffset" | "weekStartTimezoneOffset" | "nextWeekTimezoneOffset">, now = new Date()): Promise<TaskOverviewCounts> {
+  const { start, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
+  const { start: weekStart, end: weekEnd } = taskWeekBounds(now, params.timezoneOffset, params.weekStartTimezoneOffset, params.nextWeekTimezoneOffset);
+  const scopedTasks = () => supabase.from("tasks").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId);
+  const [dueToday, overdue, completedThisWeek, upcoming] = await Promise.all([
+    scopedTasks().eq("status", "open").gte("due_at", start.toISOString()).lt("due_at", tomorrow.toISOString()),
+    scopedTasks().eq("status", "open").lt("due_at", start.toISOString()),
+    scopedTasks().eq("status", "completed").gte("completed_at", weekStart.toISOString()).lt("completed_at", weekEnd.toISOString()),
+    scopedTasks().eq("status", "open").gte("due_at", tomorrow.toISOString()),
+  ]);
+  if (dueToday.error || overdue.error || completedThisWeek.error || upcoming.error) throw new Error("Unable to load workspace task overview.");
+  return {
+    dueToday: dueToday.count ?? 0,
+    overdue: overdue.count ?? 0,
+    completedThisWeek: completedThisWeek.count ?? 0,
+    upcoming: upcoming.count ?? 0,
+  };
+}
 
 export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, userId, params, canReassign, now = new Date() }: {
   workspaceId: string; userId: string; params: TaskSearchParams; canReassign: boolean; now?: Date;
