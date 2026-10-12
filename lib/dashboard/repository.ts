@@ -27,8 +27,14 @@ type DashboardBuildOptions = { workspaceId: string; currency: string; timeZone: 
 type DashboardQueryOptions = { workspaceId: string; now: Date; today: string; timeZone: string };
 type DashboardLabelQuery = { workspaceId: string; type: "company" | "contact" | "lead"; table: "companies" | "contacts" | "leads"; columns: string; ids: string[] };
 
+function logDashboardQueryError(queryName: string, error: { code?: unknown }) {
+  const code = typeof error.code === "string" && error.code ? error.code : "unknown";
+  console.error({ query: queryName, code });
+}
+
 export async function loadWorkspaceDashboard(supabase: Supabase, workspaceId: string, now = new Date()): Promise<WorkspaceDashboardData> {
   const workspace = await supabase.from("workspaces").select("default_currency,timezone").eq("id", workspaceId).maybeSingle();
+  if (workspace.error) logDashboardQueryError("workspaces", workspace.error);
   if (workspace.error || !workspace.data) throw new DashboardUnavailableError();
   const timeZone = workspace.data.timezone;
   const today = dashboardDateKey(now, timeZone);
@@ -49,7 +55,17 @@ async function loadDashboardRows(supabase: Supabase, options: DashboardQueryOpti
     supabase.from("activities").select("related_entity_id,occurred_at").eq("workspace_id", workspaceId).eq("related_entity_type", "deal").gte("occurred_at", since14Days).lte("occurred_at", now.toISOString()),
     supabase.rpc("get_workspace_report_member_labels", { target_workspace_id: workspaceId }),
   ]);
-  if (deals.error || stages.error || leads.error || tasks.error || activities.error || dealActivities.error || ownerLabels.error) throw new DashboardUnavailableError();
+  const coreQueries = [
+    ["deals", deals], ["pipeline_stages", stages], ["leads", leads], ["tasks", tasks],
+    ["activities", activities], ["deal activities", dealActivities],
+  ] as const;
+  for (const [queryName, query] of coreQueries) {
+    if (query.error) {
+      logDashboardQueryError(queryName, query.error);
+      throw new DashboardUnavailableError();
+    }
+  }
+  if (ownerLabels.error) logDashboardQueryError("get_workspace_report_member_labels", ownerLabels.error);
   return {
     deals: (deals.data ?? []) as Row[], stages: (stages.data ?? []) as Row[], leads: (leads.data ?? []) as Row[],
     tasks: (tasks.data ?? []) as Row[], activities: (activities.data ?? []) as Row[], dealActivities: (dealActivities.data ?? []) as Row[],
@@ -164,7 +180,10 @@ async function loadLabels(supabase: Supabase, query: DashboardLabelQuery) {
   const uniqueIds = [...new Set(ids)];
   if (!uniqueIds.length) return [] as Array<{ type: string; id: string; label: string }>;
   const labelsQuery = await supabase.from(table).select(columns).eq("workspace_id", workspaceId).in("id", uniqueIds).is("archived_at", null);
-  if (labelsQuery.error) throw new DashboardUnavailableError();
+  if (labelsQuery.error) {
+    logDashboardQueryError(`${table} labels`, labelsQuery.error);
+    return [];
+  }
   return ((labelsQuery.data ?? []) as unknown as Row[]).map((row) => ({
     type,
     id: text(row.id),
