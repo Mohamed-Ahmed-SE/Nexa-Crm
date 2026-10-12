@@ -5,7 +5,7 @@ import { createWorkspaceAction } from "@/lib/auth/actions";
 import { initialFormState, type PipelineTemplate } from "@/lib/auth/validation";
 import styles from "./onboarding-form.module.css";
 
-const STEPS = ["Workspace details", "Your role", "Pipeline template"] as const;
+const STEPS = ["Welcome", "Workspace name", "User role/job title", "Choose pipeline template"] as const;
 
 export function OnboardingForm() {
   const [state, action, isPending] = useActionState(createWorkspaceAction, initialFormState);
@@ -43,20 +43,26 @@ export function OnboardingForm() {
       </ol>
       <form action={step === STEPS.length - 1 ? action : undefined} className="auth-form" onSubmit={handleSubmit} ref={formRef}>
         {step === 0 ? (
+          <div className={styles.welcome}>
+            <h2>Welcome to Nexa CRM</h2>
+            <p>Keep customer relationships and follow-ups in one structured place.</p>
+          </div>
+        ) : null}
+        {step === 1 ? (
           <div className="auth-field">
             <label htmlFor="workspaceName">Workspace name <span aria-hidden="true">*</span></label>
             <input autoComplete="organization" id="workspaceName" maxLength={80} minLength={2} onChange={(event) => setWorkspaceName(event.target.value)} required value={workspaceName} />
             <span className="auth-hint">Use your company or team name.</span>
           </div>
         ) : null}
-        {step === 1 ? (
+        {step === 2 ? (
           <div className="auth-field">
             <label htmlFor="jobTitle">Your role or job title <span className="optional-label">Optional</span></label>
             <input autoComplete="organization-title" id="jobTitle" maxLength={100} onChange={(event) => setJobTitle(event.target.value)} value={jobTitle} />
             <span className="auth-hint">This helps tailor your workspace to your role.</span>
           </div>
         ) : null}
-        {step === 2 ? (
+        {step === 3 ? (
           <fieldset className={styles.templateChoices}>
             <legend>Choose a starting pipeline</legend>
             <label className={styles.templateChoice}>

@@ -85,9 +85,9 @@ function HandoffProgress() {
     <div aria-label="Onboarding progress" className={styles.handoffProgress} role="list">
       <span role="listitem">Workspace created</span>
       <span aria-hidden="true" className={styles.handoffDivider} />
-      <span aria-current="step" className={styles.handoffCurrent} role="listitem">Optional setup</span>
+      <span aria-current="step" className={styles.handoffCurrent} role="listitem">Steps 5–6 of 7 · Optional setup</span>
       <span aria-hidden="true" className={styles.handoffDivider} />
-      <span role="listitem">Dashboard</span>
+      <span role="listitem">Step 7 · Dashboard</span>
     </div>
   );
 }
@@ -112,11 +112,11 @@ function OptionalSetupLinks() {
   return (
     <nav aria-label="Optional setup steps" className={styles.nextSteps}>
       <Link className={styles.nextStep} href="/app/data-import">
-        <strong>Import a CSV</strong>
+        <strong>Step 5: Import a CSV (optional)</strong>
         <span>Bring leads, contacts, or companies into your workspace.</span>
       </Link>
       <Link className={styles.nextStep} href="/app/settings/users">
-        <strong>Invite teammates</strong>
+        <strong>Step 6: Invite teammates (optional)</strong>
         <span>Manage workspace members and send invitations.</span>
       </Link>
     </nav>
@@ -126,8 +126,8 @@ function OptionalSetupLinks() {
 function DashboardActions() {
   return (
     <div className={styles.dashboardActions}>
-      <Link className={styles.continueLink} href={DASHBOARD_PATH}>Continue to dashboard</Link>
-      <Link className={styles.skipLink} href={DASHBOARD_PATH}>Skip remaining setup</Link>
+      <Link className={styles.continueLink} href={DASHBOARD_PATH}>Step 7: Enter dashboard</Link>
+      <Link className={styles.skipLink} href={DASHBOARD_PATH}>Skip optional setup and go to dashboard</Link>
     </div>
   );
 }

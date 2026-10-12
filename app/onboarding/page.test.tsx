@@ -142,13 +142,13 @@ describe("onboarding handoff", () => {
     },
   );
 
-  it("provides both optional routes and accessible skip and continue paths", async () => {
+  it("labels optional steps 5 and 6 and provides step 7 and direct dashboard paths", async () => {
     render(await OnboardingPage({ searchParams: Promise.resolve({ setup: "workspace-created" }) }));
 
-    expect(screen.getByRole("link", { name: /import a csv/i })).toHaveAttribute("href", "/app/data-import");
-    expect(screen.getByRole("link", { name: /invite teammates/i })).toHaveAttribute("href", "/app/settings/users");
-    expect(screen.getByRole("link", { name: "Continue to dashboard" })).toHaveAttribute("href", "/app/dashboard");
-    expect(screen.getByRole("link", { name: "Skip remaining setup" })).toHaveAttribute("href", "/app/dashboard");
-    expect(screen.getByText("Optional setup")).toHaveAttribute("aria-current", "step");
+    expect(screen.getByRole("link", { name: /Step 5: Import a CSV \(optional\)/ })).toHaveAttribute("href", "/app/data-import");
+    expect(screen.getByRole("link", { name: /Step 6: Invite teammates \(optional\)/ })).toHaveAttribute("href", "/app/settings/users");
+    expect(screen.getByRole("link", { name: "Step 7: Enter dashboard" })).toHaveAttribute("href", "/app/dashboard");
+    expect(screen.getByRole("link", { name: "Skip optional setup and go to dashboard" })).toHaveAttribute("href", "/app/dashboard");
+    expect(screen.getByText(/Steps 5–6 of 7 · Optional setup/)).toHaveAttribute("aria-current", "step");
   });
 });

@@ -12,27 +12,39 @@ vi.mock("@/lib/auth/actions", () => ({
 describe("OnboardingForm", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("preserves details through the three steps and submits the selected pipeline only at the end", async () => {
+  it("welcomes users first and submits preserved workspace details only after pipeline selection", async () => {
     const user = userEvent.setup();
     render(<OnboardingForm />);
 
-    await user.type(screen.getByLabelText(/workspace name/i), "Nexa Sales");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(screen.getByText("Your role").closest("li")).toHaveAttribute("aria-current", "step");
-
-    await user.type(screen.getByLabelText(/your role or job title/i), "Sales lead");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    expect(screen.getByRole("radio", { name: /Standard Sales/ })).toBeChecked();
+    expect(screen.getByRole("heading", { name: "Welcome to Nexa CRM" })).toBeInTheDocument();
+    expect(screen.getByText("Keep customer relationships and follow-ups in one structured place.")).toBeInTheDocument();
+    expect(screen.getByText("Welcome").closest("li")).toHaveAttribute("aria-current", "step");
     expect(createWorkspaceAction).not.toHaveBeenCalled();
 
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Workspace name", { selector: "li" })).toHaveAttribute("aria-current", "step");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByLabelText(/workspace name/i)).toBeInTheDocument();
+    expect(createWorkspaceAction).not.toHaveBeenCalled();
+
+    await user.type(screen.getByLabelText(/workspace name/i), "Nexa Sales");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("User role/job title", { selector: "li" })).toHaveAttribute("aria-current", "step");
+    await user.type(screen.getByLabelText(/your role or job title/i), "Sales lead");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByText("Choose pipeline template", { selector: "li" })).toHaveAttribute("aria-current", "step");
+    expect(screen.getByRole("radio", { name: /Standard Sales/ })).toBeChecked();
+
+    await user.click(screen.getByRole("radio", { name: /Simple Sales/ }));
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText(/your role or job title/i)).toHaveValue("Sales lead");
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText(/workspace name/i)).toHaveValue("Nexa Sales");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByRole("radio", { name: /Simple Sales/ })).toBeChecked();
+    expect(createWorkspaceAction).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("radio", { name: /Simple Sales/ }));
     await user.click(screen.getByRole("button", { name: "Create workspace" }));
     await waitFor(() => expect(createWorkspaceAction).toHaveBeenCalledOnce());
 
@@ -42,10 +54,11 @@ describe("OnboardingForm", () => {
     expect(submittedFields.get("pipelineTemplate")).toBe("simple_sales");
   });
 
-  it("lets users skip template selection with the Standard Sales default", async () => {
+  it("lets users skip pipeline selection with the Standard Sales default", async () => {
     const user = userEvent.setup();
     render(<OnboardingForm />);
 
+    await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.type(screen.getByLabelText(/workspace name/i), "Nexa Sales");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));

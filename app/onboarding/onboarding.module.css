@@ -129,3 +129,14 @@
 .skipLink:hover {
   color: hsl(var(--foreground));
 }
+
+@media (max-width: 380px) {
+  .handoffProgress {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .handoffDivider {
+    flex: 0 0 10px;
+  }
+}

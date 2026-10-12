@@ -11,9 +11,10 @@
 
 .progress li {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 5px;
-  white-space: nowrap;
+  line-height: 1.25;
 }
 
 .progress li:not(:last-child)::after {
@@ -43,6 +44,24 @@
 .progress .currentStep > span:first-child {
   border-color: hsl(var(--primary));
   background: hsl(var(--primary-soft));
+}
+
+.welcome {
+  display: grid;
+  gap: 6px;
+}
+
+.welcome h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.welcome p {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .templateChoices {
