@@ -183,7 +183,7 @@ export function WorkspaceAccessManager({
                 <tr key={member.member_id}>
                   <td><strong>{member.full_name || member.email}</strong><span className="access-secondary">{member.email}</span></td>
                   <td>{member.role}</td>
-                  <td><span className={`access-status access-status-${member.status}`}>{member.status}</span></td>
+                  <td><span className={`access-status access-status-${member.status}`}>{member.status === "deactivated" ? "Inactive user" : member.status}</span></td>
                   <td><time dateTime={member.joined_at}>{formatDate(member.joined_at, dateFormat)}</time></td>
                   <td>{member.user_id === currentUserId ? <span className="access-secondary">You</span> : (
                     <div className="access-controls">
