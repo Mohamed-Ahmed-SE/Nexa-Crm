@@ -366,6 +366,25 @@ async function logLeadStatusChange(
   }
 }
 
+export async function archiveLeadAction(_previous: LeadActionState, formData: FormData): Promise<LeadActionState> {
+  const context = await requirePermission("crm.archive");
+  const parsedId = leadIdSchema.safeParse(textValue(formData, "id"));
+  if (!parsedId.success) return { message: "This lead could not be identified." };
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return { message: "Authentication is not configured." };
+  const { data: archivedLead, error } = await supabase.from("leads")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("workspace_id", context.workspaceId)
+    .eq("id", parsedId.data)
+    .is("archived_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) return { message: "Unable to archive this lead. Refresh the list and try again." };
+  if (!archivedLead) return { message: "Lead not found or already archived." };
+  revalidatePath("/app/leads");
+  return { ok: true, message: "Lead archived." };
+}
+
 export async function updateLeadAction(_previous: LeadActionState, formData: FormData): Promise<LeadActionState> {
   const context = await requirePermission("crm.edit.own");
   const parsedId = leadIdSchema.safeParse(textValue(formData, "id"));

@@ -4,7 +4,7 @@ import { useActionState, useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
-import { bulkAssignLeadsAction, bulkTagLeadsAction, createLeadAction, deleteLeadViewAction, saveLeadViewAction, updateLeadAction, type LeadActionState } from "./actions";
+import { archiveLeadAction, bulkAssignLeadsAction, bulkTagLeadsAction, createLeadAction, deleteLeadViewAction, saveLeadViewAction, updateLeadAction, type LeadActionState } from "./actions";
 import { LeadConversionDialog } from "./lead-conversion-dialog";
 import type { LeadConversionOptions } from "@/lib/leads/repository";
 import type { LeadOwner, LeadRow, LeadSavedView, LeadSource, LeadTag } from "@/lib/leads/repository";
@@ -213,9 +213,9 @@ function BulkLeadActions({ selectedIds, owners, tags, canReassign, onActionStart
 }
 
 export function LeadWorkspace({
-  leads, sources, owners, tags, canCreate, canImport, canExport, createIntent, canEditAll, canConvert, conversionOptions, canReassign, canTag, currentUserId, currency, search, statusFilter, sourceFilter, tagFilter, page, totalCount, matchedCount, newCount, qualifiedCount, ownerFilter, sort, visibleColumns, savedViews, activeViewId,
+  leads, sources, owners, tags, canCreate, canImport, canExport, createIntent, canEditAll, canConvert, canArchive, conversionOptions, canReassign, canTag, currentUserId, currency, search, statusFilter, sourceFilter, tagFilter, page, totalCount, matchedCount, newCount, qualifiedCount, ownerFilter, sort, visibleColumns, savedViews, activeViewId,
 }: {
-  leads: LeadRow[]; sources: LeadSource[]; owners: LeadOwner[]; tags: LeadTag[]; canCreate: boolean; canImport: boolean; canExport: boolean; createIntent: boolean; canEditAll: boolean; canConvert: boolean; conversionOptions: LeadConversionOptions; canReassign: boolean; canTag: boolean; currentUserId: string; currency: string;
+  leads: LeadRow[]; sources: LeadSource[]; owners: LeadOwner[]; tags: LeadTag[]; canCreate: boolean; canImport: boolean; canExport: boolean; createIntent: boolean; canEditAll: boolean; canConvert: boolean; canArchive: boolean; conversionOptions: LeadConversionOptions; canReassign: boolean; canTag: boolean; currentUserId: string; currency: string;
   search: string; statusFilter: string; sourceFilter: string; tagFilter: string; ownerFilter: string; page: number; totalCount: number; matchedCount: number; newCount: number; qualifiedCount: number;
   sort: LeadViewSort; visibleColumns: LeadViewColumn[]; savedViews: LeadSavedView[]; activeViewId: string;
 }) {
@@ -223,6 +223,13 @@ export function LeadWorkspace({
   const dateFormat = useDateFormat();
   const [formLead, setFormLead] = useState<LeadRow | null | undefined>(createIntent && canCreate ? null : undefined);
   const [conversionLead, setConversionLead] = useState<LeadRow | null>(null);
+  const [archiveLead, setArchiveLead] = useState<LeadRow | null>(null);
+  const [archiveState, archiveAction, archiving] = useActionState(archiveLeadAction, emptyState);
+  useEffect(() => {
+    if (!archiveState.ok) return;
+    setArchiveLead(null);
+    router.refresh();
+  }, [archiveState, router]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [bulkSuccessMessage, setBulkSuccessMessage] = useState("");
   useEffect(() => setSelectedIds([]), [leads]);
@@ -240,7 +247,7 @@ export function LeadWorkspace({
   const clearBulkSuccessMessage = useCallback(() => setBulkSuccessMessage(""), []);
   useCreateIntent(createIntent, canCreate, openCreateForm);
   const pageCount = Math.max(1, Math.ceil(matchedCount / 25));
-  const actionVisible = canEditAll || canReassign || canCreate || canConvert;
+  const actionVisible = canEditAll || canReassign || canCreate || canConvert || canArchive;
 
   return <main className="page-container leads-page">
     <header className="leads-header">
@@ -284,7 +291,7 @@ export function LeadWorkspace({
               {visibleColumns.includes("value") && <td data-label="Estimated value" className="leads-amount">{formatValue(Number(lead.estimated_value), lead.currency || currency)}</td>}
               {visibleColumns.includes("updated") && <td data-label="Updated"><time dateTime={lead.updated_at}>{formatCalendarDate(lead.updated_at, dateFormat)}</time></td>}
               {visibleColumns.includes("tags") && <td data-label="Tags">{lead.tags?.length ? <span className="contact-tag-list">{lead.tags.map((tag) => <span className="contact-tag" key={tag.id}>{tag.name}</span>)}</span> : "—"}</td>}
-               {actionVisible && <td className="leads-row-action">{canEdit && lead.status !== "converted" ? <div className="leads-row-actions"><button aria-label={`Edit ${lead.full_name}`} className="leads-edit-button" onClick={() => setFormLead(lead)} type="button">Edit</button>{canConvert && <button aria-label={`Convert ${lead.full_name}`} className="leads-edit-button" onClick={() => setConversionLead(lead)} type="button">Convert</button>}</div> : <span aria-label="Read only" className="leads-read-only">—</span>}</td>}
+               {actionVisible && <td className="leads-row-action">{canEdit && lead.status !== "converted" || canArchive ? <div className="leads-row-actions">{canEdit && lead.status !== "converted" && <><button aria-label={`Edit ${lead.full_name}`} className="leads-edit-button" onClick={() => setFormLead(lead)} type="button">Edit</button>{canConvert && <button aria-label={`Convert ${lead.full_name}`} className="leads-edit-button" onClick={() => setConversionLead(lead)} type="button">Convert</button>}</>}{canArchive && <button aria-label={`Archive ${lead.full_name}`} className="leads-edit-button" onClick={() => setArchiveLead(lead)} type="button">Archive</button>}</div> : <span aria-label="Read only" className="leads-read-only">—</span>}</td>}
             </tr>;
           })}</tbody>
         </table>
@@ -294,7 +301,37 @@ export function LeadWorkspace({
     </section>
     {formLead !== undefined && <LeadForm canReassign={canReassign} currency={currency} lead={formLead ?? undefined} onClose={() => setFormLead(undefined)} owners={owners} sources={sources} />}
     {conversionLead && <LeadConversionDialog currency={currency} lead={conversionLead} onClose={() => setConversionLead(null)} options={conversionOptions} owners={owners} currentUserId={currentUserId} />}
+    {archiveLead && <ArchiveLeadConfirmation action={archiveAction} lead={archiveLead} onClose={() => setArchiveLead(null)} pending={archiving} state={archiveState} />}
   </main>;
+}
+
+function ArchiveLeadConfirmation({ lead, state, action, pending, onClose }: {
+  lead: LeadRow; state: LeadActionState; action: (formData: FormData) => void; pending: boolean; onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+    return () => opener?.focus();
+  }, []);
+  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape" && !pending) closeRef.current();
+    if (event.key !== "Tab") return;
+    const controls = dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled)");
+    if (!controls?.length) return;
+    const first = controls[0]; const last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+  return <div className="leads-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onClose(); }}>
+    <section ref={dialogRef} aria-describedby="archive-lead-description" aria-labelledby="archive-lead-title" aria-modal="true" className="company-confirm-dialog" onKeyDown={handleKeyDown} role="alertdialog" tabIndex={-1}>
+      <h2 id="archive-lead-title">Archive {lead.full_name}?</h2>
+      <p id="archive-lead-description">This lead will be removed from the active leads list. Its related records will remain in the workspace.</p>
+      <form action={action}><input name="id" type="hidden" value={lead.id} />{state.message && <p aria-live="polite" className="leads-form-message" role="alert">{state.message}</p>}<footer className="leads-form-footer"><button className="leads-secondary-button" disabled={pending} onClick={onClose} type="button">Cancel</button><button className="leads-primary-button" disabled={pending} type="submit">{pending ? "Archiving…" : "Archive lead"}</button></footer></form>
+    </section>
+  </div>;
 }
 
 function filteredExportHref(entity: string, filters: Record<string, string>) {

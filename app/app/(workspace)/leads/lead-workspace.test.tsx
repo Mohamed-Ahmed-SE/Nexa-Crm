@@ -2,12 +2,12 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LeadWorkspace } from "./lead-workspace";
-import { bulkAssignLeadsAction, bulkTagLeadsAction, convertLeadAction } from "./actions";
+import { archiveLeadAction, bulkAssignLeadsAction, bulkTagLeadsAction, convertLeadAction } from "./actions";
 import type { LeadRow } from "@/lib/leads/repository";
 
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn(), push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
-vi.mock("./actions", () => ({ createLeadAction: vi.fn(), updateLeadAction: vi.fn(), convertLeadAction: vi.fn(), bulkAssignLeadsAction: vi.fn(), bulkTagLeadsAction: vi.fn(), saveLeadViewAction: vi.fn(), deleteLeadViewAction: vi.fn() }));
+vi.mock("./actions", () => ({ archiveLeadAction: vi.fn(), createLeadAction: vi.fn(), updateLeadAction: vi.fn(), convertLeadAction: vi.fn(), bulkAssignLeadsAction: vi.fn(), bulkTagLeadsAction: vi.fn(), saveLeadViewAction: vi.fn(), deleteLeadViewAction: vi.fn() }));
 
 Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value() { this.setAttribute("open", ""); } });
 Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value() { this.removeAttribute("open"); this.dispatchEvent(new Event("close")); } });
@@ -24,7 +24,7 @@ const view = {
 };
 const props = {
   leads: [lead], sources: [], tags: [], owners: [{ id: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", label: "Taylor Reed" }], canTag: false, canCreate: false, canImport: false, canExport: false, createIntent: false,
-  canEditAll: false, canConvert: false, conversionOptions: { pipelineId: "", pipelines: [] }, canReassign: false, currentUserId: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", currency: "USD",
+  canEditAll: false, canConvert: false, canArchive: false, conversionOptions: { pipelineId: "", pipelines: [] }, canReassign: false, currentUserId: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", currency: "USD",
   search: "", statusFilter: "qualified", sourceFilter: "", tagFilter: "", ownerFilter: "", page: 1, totalCount: 1, matchedCount: 1,
   newCount: 0, qualifiedCount: 1, sort: "value_desc" as const, visibleColumns: ["name", "value"] as ("name" | "value")[],
   savedViews: [view], activeViewId: view.id,
@@ -162,5 +162,49 @@ describe("LeadWorkspace saved views", () => {
 
     await user.selectOptions(savedViewSelect, view.id);
     expect(new FormData(filterForm!).get("view")).toBe(view.id);
+  });
+});
+
+describe("LeadWorkspace archiving", () => {
+  it("hides archive without permission, confirms each archive, and refreshes after each success", async () => {
+    const user = userEvent.setup();
+    const secondLead = { ...lead, id: "b5c0bdfd-5294-4b31-a230-8fa8f2a3f8bc", full_name: "Morgan Chen" };
+    routerMocks.refresh.mockClear();
+    vi.mocked(archiveLeadAction).mockClear();
+    const { rerender } = render(<LeadWorkspace {...props} />);
+    expect(screen.queryByRole("button", { name: "Archive Taylor Reed" })).not.toBeInTheDocument();
+
+    rerender(<LeadWorkspace {...props} leads={[lead, secondLead]} canArchive canEditAll canConvert />);
+    expect(screen.getByRole("button", { name: "Edit Taylor Reed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Convert Taylor Reed" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Archive Taylor Reed" }));
+    const dialog = screen.getByRole("alertdialog", { name: "Archive Taylor Reed?" });
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(archiveLeadAction).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(archiveLeadAction).not.toHaveBeenCalled();
+
+    vi.mocked(archiveLeadAction)
+      .mockResolvedValueOnce({ ok: true, message: "Lead archived." })
+      .mockResolvedValueOnce({ ok: true, message: "Lead archived." });
+    await user.click(screen.getByRole("button", { name: "Archive Taylor Reed" }));
+    await user.click(screen.getByRole("button", { name: "Archive lead" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(vi.mocked(archiveLeadAction).mock.calls[0]?.[1].get("id")).toBe(lead.id);
+    expect(routerMocks.refresh).toHaveBeenCalledOnce();
+
+    await user.click(screen.getByRole("button", { name: "Archive Morgan Chen" }));
+    const secondDialog = screen.getByRole("alertdialog", { name: "Archive Morgan Chen?" });
+    await user.click(within(secondDialog).getByRole("button", { name: "Archive lead" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(archiveLeadAction).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(archiveLeadAction).mock.calls[1]?.[1].get("id")).toBe(secondLead.id);
+    expect(routerMocks.refresh).toHaveBeenCalledTimes(2);
+
+    rerender(<LeadWorkspace {...props} canArchive leads={[]} totalCount={0} matchedCount={0} />);
+    expect(screen.queryByRole("link", { name: "Taylor Reed" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Morgan Chen" })).not.toBeInTheDocument();
   });
 });

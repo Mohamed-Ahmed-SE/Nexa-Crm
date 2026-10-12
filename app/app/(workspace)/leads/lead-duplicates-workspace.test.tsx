@@ -7,6 +7,7 @@ import { LeadWorkspace } from "./lead-workspace";
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
 vi.mock("./actions", () => ({
+  archiveLeadAction: vi.fn(),
   createLeadAction: vi.fn(),
   updateLeadAction: vi.fn(),
   convertLeadAction: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock("./actions", () => ({
 
 const props = {
   leads: [], sources: [], owners: [], tags: [], canCreate: true, canImport: false, canExport: false, createIntent: false,
-  canEditAll: false, canConvert: false, conversionOptions: { pipelineId: "", pipelines: [] }, canReassign: false, canTag: false,
+  canEditAll: false, canConvert: false, canArchive: false, conversionOptions: { pipelineId: "", pipelines: [] }, canReassign: false, canTag: false,
   currentUserId: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", currency: "USD", search: "", statusFilter: "all",
   sourceFilter: "", tagFilter: "", ownerFilter: "", page: 1, totalCount: 0, matchedCount: 0, newCount: 0, qualifiedCount: 0,
   sort: "updated_desc" as const, visibleColumns: ["name"] as ("name")[], savedViews: [], activeViewId: "",

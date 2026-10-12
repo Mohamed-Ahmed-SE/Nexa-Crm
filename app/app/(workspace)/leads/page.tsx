@@ -40,6 +40,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     createIntent={canCreate && rawParams.create === "1"}
     canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")}
     canConvert={canConvert}
+    canArchive={hasWorkspacePermission(context.role, "crm.archive")}
     conversionOptions={conversionOptions}
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
     canTag={canTag}
