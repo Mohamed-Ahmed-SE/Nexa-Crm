@@ -3,8 +3,8 @@
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarClock, Check, Mail, Phone, Plus, X } from "lucide-react";
-import { addContactNoteAction, completeContactTaskAction, createContactAction, createContactTaskAction, logContactActivityAction, updateContactAction, uploadContactFileAction, type ContactActionState } from "./actions";
+import { Archive, CalendarClock, Check, Mail, Phone, Plus, X } from "lucide-react";
+import { addContactNoteAction, archiveContactAction, completeContactTaskAction, createContactAction, createContactTaskAction, logContactActivityAction, updateContactAction, uploadContactFileAction, type ContactActionState } from "./actions";
 import { type ContactActivity, type ContactAttachment, type ContactCompany, type ContactDeal, type ContactListRow, type ContactNote, type ContactOwner, type ContactRow, type ContactTask } from "@/lib/contacts/repository";
 import { contactPageSize, contactViewColumns, contactViewSorts, lifecycleLabels, type ContactViewColumn, type ContactViewSort } from "@/lib/contacts/schema";
 import type { ContactSavedView } from "@/lib/contacts/repository";
@@ -99,6 +99,39 @@ function Dialog({ title, description, onClose, pending, children }: { title: str
   return <div className="leads-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onClose(); }}><section ref={dialogRef} aria-labelledby="contact-dialog-title" aria-modal="true" className="leads-dialog" onKeyDown={keepFocusInDialog} role="dialog" tabIndex={-1}><header className="leads-dialog-header"><div><h2 id="contact-dialog-title">{title}</h2><p>{description}</p></div><button aria-label="Close dialog" className="leads-icon-button" disabled={pending} onClick={onClose} type="button"><X size={17} /></button></header>{children}</section></div>;
 }
 
+function ArchiveContactConfirmation({ contact, onClose }: { contact: ContactListRow; onClose: () => void }) {
+  const [state, formAction, pending] = useActionState(archiveContactAction, blank);
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  const router = useRouter();
+  closeRef.current = onClose;
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+    return () => opener?.focus();
+  }, []);
+  useEffect(() => {
+    if (state.ok) { onClose(); router.refresh(); }
+  }, [state, onClose, router]);
+  function keepFocusInConfirmation(event: React.KeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape" && !pending) closeRef.current();
+    if (event.key !== "Tab") return;
+    const buttons = dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled)");
+    if (!buttons?.length) return;
+    const first = buttons[0]; const last = buttons[buttons.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+  const name = fullName(contact);
+  return <div className="leads-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onClose(); }}>
+    <section ref={dialogRef} aria-describedby="archive-contact-description" aria-labelledby="archive-contact-title" aria-modal="true" className="company-confirm-dialog" onKeyDown={keepFocusInConfirmation} role="alertdialog" tabIndex={-1}>
+      <h2 id="archive-contact-title">Archive {name}?</h2>
+      <p id="archive-contact-description">This contact will be removed from the active contacts list. Related records will remain in the workspace.</p>
+      <form action={formAction}><input name="id" type="hidden" value={contact.id} />{state.message && <p aria-live="assertive" className="leads-form-message" role="alert">{state.message}</p>}<footer className="leads-form-footer"><button className="leads-secondary-button" disabled={pending} onClick={onClose} type="button">Cancel</button><button className="leads-primary-button" disabled={pending} type="submit">{pending ? "Archiving…" : "Archive contact"}</button></footer></form>
+    </section>
+  </div>;
+}
+
 function Field({ label, name, error, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; name: string; error?: string }) {
   return <label className="leads-field"><span>{label}{props.required && <b aria-hidden="true"> *</b>}</span><input aria-invalid={Boolean(error)} name={name} {...props} />{error && <small>{error}</small>}</label>;
 }
@@ -147,14 +180,15 @@ function SavedContactViewControls({ search, lifecycle, companyId, ownerId, sort,
   </section>;
 }
 
-export function ContactsWorkspace({ contacts, companies, owners, canCreate, canImport, canExport, createIntent, canEditAll, canEditOwn, canReassign, currentUserId, search, lifecycle, companyId, ownerId, page, matchedCount, totalCount, activeCount, customerCount, sort, visibleColumns, savedViews, activeViewId }: {
-  contacts: ContactListRow[]; companies: CompanyOption[]; owners: ContactOwner[]; canCreate: boolean; canImport: boolean; canExport: boolean; createIntent: boolean; canEditAll: boolean; canEditOwn: boolean; canReassign: boolean; currentUserId: string;
+export function ContactsWorkspace({ contacts, companies, owners, canCreate, canImport, canExport, createIntent, canEditAll, canEditOwn, canArchive, canReassign, currentUserId, search, lifecycle, companyId, ownerId, page, matchedCount, totalCount, activeCount, customerCount, sort, visibleColumns, savedViews, activeViewId }: {
+  contacts: ContactListRow[]; companies: CompanyOption[]; owners: ContactOwner[]; canCreate: boolean; canImport: boolean; canExport: boolean; createIntent: boolean; canEditAll: boolean; canEditOwn: boolean; canArchive: boolean; canReassign: boolean; currentUserId: string;
   search: string; lifecycle: string; companyId: string; ownerId: string; page: number; matchedCount: number; totalCount: number; activeCount: number; customerCount: number;
   sort: ContactViewSort; visibleColumns: ContactViewColumn[]; savedViews: ContactSavedView[]; activeViewId: string;
 }) {
   const dateFormat = useDateFormat();
   const [dialog, setDialog] = useState<DialogKind | null>(createIntent && canCreate ? "contact" : null);
   const [editing, setEditing] = useState<ContactRow | undefined>();
+  const [archivingContact, setArchivingContact] = useState<ContactListRow | null>(null);
   const openCreateForm = useCallback(() => { setEditing(undefined); setDialog("contact"); }, []);
   useCreateIntent(createIntent, canCreate, openCreateForm);
   const pageCount = Math.max(1, Math.ceil(matchedCount / contactPageSize));
@@ -175,11 +209,11 @@ export function ContactsWorkspace({ contacts, companies, owners, canCreate, canI
     <div className="leads-table-wrap"><table className="leads-table contact-table"><thead><tr>{visibleColumns.includes("name") && <th scope="col">Name</th>}{visibleColumns.includes("company") && <th scope="col">Company</th>}{visibleColumns.includes("job_title") && <th scope="col">Job title</th>}{visibleColumns.includes("email") && <th scope="col">Email</th>}{visibleColumns.includes("phone") && <th scope="col">Phone</th>}{visibleColumns.includes("owner") && <th scope="col">Owner</th>}{visibleColumns.includes("lifecycle") && <th scope="col">Lifecycle</th>}{visibleColumns.includes("last_activity") && <th scope="col">Last Activity</th>}{visibleColumns.includes("next_activity") && <th scope="col">Next Activity</th>}{visibleColumns.includes("tags") && <th scope="col">Tags</th>}<th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{contacts.map((contact) => {
       const canEdit = canEditAll || (canEditOwn && contact.owner_id === currentUserId);
       const subline = [visibleColumns.includes("email") ? contact.email : null, visibleColumns.includes("phone") ? contact.phone : null].find(Boolean);
-       return <tr key={contact.id}>{visibleColumns.includes("name") && <td data-label="Name"><a className="contact-row-name" href={`/app/contacts/${contact.id}`}>{fullName(contact)}</a>{subline && <span className="contact-row-subline">{subline}</span>}</td>}{visibleColumns.includes("company") && <td data-label="Company">{contact.company?.name ?? "—"}</td>}{visibleColumns.includes("job_title") && <td data-label="Job title">{contact.job_title || "—"}</td>}{visibleColumns.includes("email") && <td data-label="Email">{contact.email ? <a className="contact-link" href={`mailto:${contact.email}`}>{contact.email}</a> : "—"}</td>}{visibleColumns.includes("phone") && <td data-label="Phone">{contact.phone ? <a className="contact-link" href={`tel:${contact.phone}`}>{contact.phone}</a> : "—"}</td>}{visibleColumns.includes("owner") && <td data-label="Owner">{ownerName(contact.owner_id, owners)}</td>}{visibleColumns.includes("lifecycle") && <td data-label="Lifecycle"><span className={lifecycleClass(contact.lifecycle_status)}>{lifecycleLabels[contact.lifecycle_status]}</span></td>}{visibleColumns.includes("last_activity") && <td data-label="Last Activity">{contact.lastActivity ? <time dateTime={contact.lastActivity}>{formatContactDate(contact.lastActivity, dateFormat)}</time> : "—"}</td>}{visibleColumns.includes("next_activity") && <td data-label="Next Activity">{contact.nextActivity ? <time dateTime={contact.nextActivity}>{formatContactDate(contact.nextActivity, dateFormat)}</time> : "—"}</td>}{visibleColumns.includes("tags") && <td data-label="Tags">{contact.tags.length ? <span className="contact-tag-list">{contact.tags.map((tag) => <span className="contact-tag" key={tag.id}>{tag.name}</span>)}</span> : "—"}</td>}<td className="leads-row-action">{canEdit && <button className="leads-edit-button" onClick={() => open(contact)} type="button">Edit</button>}</td></tr>;
+       return <tr key={contact.id}>{visibleColumns.includes("name") && <td data-label="Name"><a className="contact-row-name" href={`/app/contacts/${contact.id}`}>{fullName(contact)}</a>{subline && <span className="contact-row-subline">{subline}</span>}</td>}{visibleColumns.includes("company") && <td data-label="Company">{contact.company?.name ?? "—"}</td>}{visibleColumns.includes("job_title") && <td data-label="Job title">{contact.job_title || "—"}</td>}{visibleColumns.includes("email") && <td data-label="Email">{contact.email ? <a className="contact-link" href={`mailto:${contact.email}`}>{contact.email}</a> : "—"}</td>}{visibleColumns.includes("phone") && <td data-label="Phone">{contact.phone ? <a className="contact-link" href={`tel:${contact.phone}`}>{contact.phone}</a> : "—"}</td>}{visibleColumns.includes("owner") && <td data-label="Owner">{ownerName(contact.owner_id, owners)}</td>}{visibleColumns.includes("lifecycle") && <td data-label="Lifecycle"><span className={lifecycleClass(contact.lifecycle_status)}>{lifecycleLabels[contact.lifecycle_status]}</span></td>}{visibleColumns.includes("last_activity") && <td data-label="Last Activity">{contact.lastActivity ? <time dateTime={contact.lastActivity}>{formatContactDate(contact.lastActivity, dateFormat)}</time> : "—"}</td>}{visibleColumns.includes("next_activity") && <td data-label="Next Activity">{contact.nextActivity ? <time dateTime={contact.nextActivity}>{formatContactDate(contact.nextActivity, dateFormat)}</time> : "—"}</td>}{visibleColumns.includes("tags") && <td data-label="Tags">{contact.tags.length ? <span className="contact-tag-list">{contact.tags.map((tag) => <span className="contact-tag" key={tag.id}>{tag.name}</span>)}</span> : "—"}</td>}<td className="leads-row-action"><div className="leads-row-actions">{canEdit && <button aria-label={`Edit ${fullName(contact)}`} className="leads-edit-button" onClick={() => open(contact)} type="button">Edit</button>}{canArchive && <button aria-label={`Archive ${fullName(contact)}`} className="leads-edit-button" onClick={() => setArchivingContact(contact)} type="button"><Archive aria-hidden="true" size={13} />Archive</button>}</div></td></tr>;
     })}</tbody></table></div>
     {contacts.length === 0 && <div className="leads-empty"><h2>{search || lifecycle !== "all" || companyId || ownerId ? "No matching contacts" : "No contacts yet"}</h2><p>{search || lifecycle !== "all" || companyId || ownerId ? "Try changing or clearing your filters." : "Contacts added to this workspace will appear here."}</p>{canCreate && !search && lifecycle === "all" && !companyId && !ownerId && <button className="leads-secondary-button" onClick={() => open()} type="button">Add your first contact</button>}</div>}
     <nav aria-label="Contacts pages" className="leads-pagination"><span>{matchedCount === 0 ? "0 records" : `${(page - 1) * contactPageSize + 1}–${Math.min(page * contactPageSize, matchedCount)} of ${matchedCount} records`}</span><div><a aria-disabled={page <= 1} className={page <= 1 ? "is-disabled" : ""} href={page <= 1 ? undefined : pageHref(page - 1, search, lifecycle, companyId, ownerId, sort, activeViewId)}>Previous</a><span>Page {page} of {pageCount}</span><a aria-disabled={page >= pageCount} className={page >= pageCount ? "is-disabled" : ""} href={page >= pageCount ? undefined : pageHref(page + 1, search, lifecycle, companyId, ownerId, sort, activeViewId)}>Next</a></div></nav>
-    </section>{dialog === "contact" && <ContactForm companies={companies} owners={owners} canReassign={canReassign} contact={editing} onClose={() => setDialog(null)} />}
+    </section>{dialog === "contact" && <ContactForm companies={companies} owners={owners} canReassign={canReassign} contact={editing} onClose={() => setDialog(null)} />}{archivingContact && <ArchiveContactConfirmation contact={archivingContact} onClose={() => setArchivingContact(null)} />}
   </main>;
 }
 

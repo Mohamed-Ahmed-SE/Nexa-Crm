@@ -26,6 +26,7 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       createIntent={canCreate && rawParams.create === "1"}
       canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")}
       canEditOwn={hasWorkspacePermission(context.role, "crm.edit.own")}
+      canArchive={hasWorkspacePermission(context.role, "crm.archive")}
       canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
       companyId={activeParams.companyId}
       companies={contactsPage.companies}

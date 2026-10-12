@@ -1,12 +1,16 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ContactListRow, ContactSavedView } from "@/lib/contacts/repository";
 import type { ContactViewColumn } from "@/lib/contacts/schema";
 import { ContactsWorkspace } from "./contacts-workspace";
+import { archiveContactAction } from "./actions";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }) }));
+const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
 vi.mock("./actions", () => ({
   addContactNoteAction: vi.fn(),
+  archiveContactAction: vi.fn(),
   completeContactTaskAction: vi.fn(),
   createContactAction: vi.fn(),
   createContactTaskAction: vi.fn(),
@@ -57,6 +61,7 @@ const workspaceProps = {
   createIntent: false,
   canEditAll: false,
   canEditOwn: false,
+  canArchive: false,
   canReassign: false,
   currentUserId: "user-1",
   search: "",
@@ -104,5 +109,53 @@ describe("ContactsWorkspace list context", () => {
     expect(emptyRow.querySelector('[data-label="Last Activity"]')?.textContent).toBe("—");
     expect(emptyRow.querySelector('[data-label="Next Activity"]')?.textContent).toBe("—");
     expect(emptyRow.querySelector('[data-label="Tags"]')?.textContent).toBe("—");
+  });
+});
+
+describe("ContactsWorkspace archiving", () => {
+  it("gates archive by permission and cancels without submitting", async () => {
+    const user = userEvent.setup();
+    vi.mocked(archiveContactAction).mockClear();
+    const { rerender } = render(<ContactsWorkspace {...workspaceProps} />);
+    expect(screen.queryByRole("button", { name: "Archive Avery Chen" })).not.toBeInTheDocument();
+
+    rerender(<ContactsWorkspace {...workspaceProps} canArchive />);
+    await user.click(screen.getByRole("button", { name: "Archive Avery Chen" }));
+    const confirmation = screen.getByRole("alertdialog", { name: "Archive Avery Chen?" });
+    expect(within(confirmation).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    expect(archiveContactAction).not.toHaveBeenCalled();
+
+    await user.click(within(confirmation).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(archiveContactAction).not.toHaveBeenCalled();
+  });
+
+  it("keeps an actionable error and closes with a refresh after each distinct success", async () => {
+    const user = userEvent.setup();
+    const secondContact = { ...contactWithoutContext, id: "contact-3", first_name: "Morgan", last_name: "Chen" };
+    routerMocks.refresh.mockClear();
+    vi.mocked(archiveContactAction).mockReset()
+      .mockResolvedValueOnce({ message: "Unable to archive this contact. Refresh the list and try again." })
+      .mockResolvedValueOnce({ ok: true, message: "Contact archived." })
+      .mockResolvedValueOnce({ ok: true, message: "Contact archived." });
+    render(<ContactsWorkspace {...workspaceProps} canArchive contacts={[populatedContact, secondContact]} />);
+
+    await user.click(screen.getByRole("button", { name: "Archive Avery Chen" }));
+    let confirmation = screen.getByRole("alertdialog", { name: "Archive Avery Chen?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Archive contact" }));
+    expect(await within(confirmation).findByRole("alert")).toHaveTextContent("Unable to archive this contact");
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+
+    await user.click(within(confirmation).getByRole("button", { name: "Archive contact" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(routerMocks.refresh).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(archiveContactAction).mock.calls[1]?.[1].get("id")).toBe(populatedContact.id);
+
+    await user.click(screen.getByRole("button", { name: "Archive Morgan Chen" }));
+    confirmation = screen.getByRole("alertdialog", { name: "Archive Morgan Chen?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Archive contact" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(routerMocks.refresh).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(archiveContactAction).mock.calls[2]?.[1].get("id")).toBe(secondContact.id);
   });
 });

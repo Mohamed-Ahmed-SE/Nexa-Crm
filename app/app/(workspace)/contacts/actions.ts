@@ -107,6 +107,25 @@ async function logContactCreation(
   }
 }
 
+export async function archiveContactAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
+  const context = await requirePermission("crm.archive");
+  const id = contactIdSchema.safeParse(text(form, "id"));
+  if (!id.success) return { message: "This contact could not be identified." };
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return { message: "Authentication is not configured." };
+  const { data: archivedContact, error } = await supabase.from("contacts")
+    .update({ archived_at: new Date().toISOString() })
+    .eq("workspace_id", context.workspaceId)
+    .eq("id", id.data)
+    .is("archived_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) return { message: "Unable to archive this contact. Refresh the list and try again." };
+  if (!archivedContact) return { message: "Contact not found or already archived." };
+  revalidatePath("/app/contacts");
+  return { ok: true, message: "Contact archived." };
+}
+
 export async function updateContactAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
   const context = await requirePermission("crm.edit.own");
   const id = contactIdSchema.safeParse(text(form, "id"));
