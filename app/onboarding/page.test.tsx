@@ -14,6 +14,20 @@ const mocks = vi.hoisted(() => {
     eq: vi.fn(),
     order: vi.fn(),
   };
+  const membershipQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    order: vi.fn(),
+  };
+  const workspaceQuery = {
+    select: vi.fn(),
+    in: vi.fn(),
+  };
+  const profileQuery = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn(),
+  };
   return {
     supabase: {
       auth: { getUser: vi.fn() },
@@ -23,6 +37,10 @@ const mocks = vi.hoisted(() => {
     queryFilters: {} as Record<string, Array<[string, unknown]>>,
     pipelineQuery,
     stageQuery,
+    membershipQuery,
+    workspaceQuery,
+    profileQuery,
+    cookieStore: { get: vi.fn(() => undefined) },
     isSupabaseConfigured: vi.fn(),
     createSupabaseServerClient: vi.fn(),
     redirect: vi.fn((path: string) => { throw new Error(`REDIRECT:${path}`); }),
@@ -30,6 +48,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+vi.mock("next/headers", () => ({ cookies: async () => mocks.cookieStore }));
 vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} {...props}>{children}</a>,
 }));
@@ -66,25 +85,36 @@ beforeEach(() => {
     return mocks.stageQuery;
   });
   mocks.stageQuery.order.mockResolvedValue({ data: seededStages, error: null });
+  mocks.membershipQuery.select.mockReturnValue(mocks.membershipQuery);
+  mocks.membershipQuery.eq.mockImplementation((column: string, value: unknown) => {
+    (mocks.queryFilters.workspace_members ??= []).push([column, value]);
+    return mocks.membershipQuery;
+  });
+  mocks.membershipQuery.order.mockResolvedValue({
+    data: [{ user_id: "user-1", workspace_id: workspaceContext.workspaceId, role: "admin", status: "active" }],
+    error: null,
+  });
+  mocks.workspaceQuery.select.mockReturnValue(mocks.workspaceQuery);
+  mocks.workspaceQuery.in.mockImplementation(async (column: string, values: unknown) => {
+    (mocks.queryFilters.workspaces ??= []).push([column, values]);
+    return { data: [{ id: workspaceContext.workspaceId, name: "Acme" }], error: null };
+  });
+  mocks.profileQuery.select.mockReturnValue(mocks.profileQuery);
+  mocks.profileQuery.eq.mockImplementation((column: string, value: unknown) => {
+    (mocks.queryFilters.profiles ??= []).push([column, value]);
+    return mocks.profileQuery;
+  });
+  mocks.profileQuery.maybeSingle.mockResolvedValue({
+    data: { full_name: "Avery Chen", date_format: null, avatar_url: null },
+    error: null,
+  });
   mocks.supabase.from.mockImplementation((table: string) => {
     if (table === "pipelines") return mocks.pipelineQuery;
     if (table === "pipeline_stages") return mocks.stageQuery;
-    const tableData = {
-      workspace_members: { user_id: "user-1", workspace_id: workspaceContext.workspaceId, role: "admin", status: "active" },
-      workspaces: { id: workspaceContext.workspaceId, name: "Acme" },
-      profiles: { full_name: "Avery Chen", date_format: null, avatar_url: null },
-    }[table as "workspace_members" | "workspaces" | "profiles"];
-    const query = {
-      select: vi.fn(() => query),
-      eq: vi.fn((column: string, value: unknown) => {
-        (mocks.queryFilters[table] ??= []).push([column, value]);
-        return query;
-      }),
-      order: vi.fn(() => query),
-      limit: vi.fn(() => query),
-      maybeSingle: vi.fn(async () => ({ data: tableData, error: null })),
-    };
-    return query;
+    if (table === "workspace_members") return mocks.membershipQuery;
+    if (table === "workspaces") return mocks.workspaceQuery;
+    if (table === "profiles") return mocks.profileQuery;
+    throw new Error(`Unexpected table: ${table}`);
   });
 });
 

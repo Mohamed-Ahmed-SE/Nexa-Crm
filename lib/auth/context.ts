@@ -1,9 +1,12 @@
 import "server-only";
 
+import { cookies } from "next/headers";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { isWorkspaceRole } from "@/lib/auth/permissions";
 import { throwIfAuthVerificationFailed } from "@/lib/auth/session";
-import { deriveWorkspaceContext, type WorkspaceContext } from "@/lib/auth/workspace-context";
+import { deriveWorkspaceContext, selectActiveWorkspace, type WorkspaceContext } from "@/lib/auth/workspace-context";
+
+export const workspaceCookieName = "nexa-workspace";
 
 export { deriveWorkspaceContext };
 export type { WorkspaceContext };
@@ -17,23 +20,30 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
   const user = authResult.user;
   if (!user) return null;
 
-  const { data: membership, error: membershipError } = await supabase
+  const cookieStore = await cookies();
+  const selectedWorkspaceId = cookieStore.get(workspaceCookieName)?.value;
+  const { data: memberships, error: membershipError } = await supabase
     .from("workspace_members")
     .select("user_id, workspace_id, role, status")
     .eq("user_id", user.id)
     .eq("status", "active")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: true });
   if (membershipError) throw new Error("Unable to verify workspace membership.");
-  if (!membership || !isWorkspaceRole(membership.role)) return null;
+  if (!memberships?.length) return null;
 
-  const { data: workspace, error: workspaceError } = await supabase
+  const { data: workspaces, error: workspaceError } = await supabase
     .from("workspaces")
     .select("id, name")
-    .eq("id", membership.workspace_id)
-    .maybeSingle();
+    .in("id", memberships.map(({ workspace_id }) => workspace_id));
   if (workspaceError) throw new Error("Unable to verify workspace access.");
+  const selection = selectActiveWorkspace(user.id, memberships, workspaces ?? [], selectedWorkspaceId);
+  if (!selection) return null;
+  const availableWorkspaces = memberships
+    .filter(({ user_id, status, role }) => user_id === user.id && status === "active" && isWorkspaceRole(role))
+    .flatMap(({ workspace_id }) => {
+      const available = workspaces?.find(({ id }) => id === workspace_id);
+      return available ? [available] : [];
+    });
 
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
@@ -42,5 +52,6 @@ export async function getWorkspaceContext(): Promise<WorkspaceContext | null> {
     .maybeSingle();
   if (profileError) throw new Error("Unable to load the current profile.");
 
-  return deriveWorkspaceContext(user, membership, workspace, profile);
+  const workspace = workspaces?.find(({ id }) => id === selection.workspace.id) ?? null;
+  return deriveWorkspaceContext(user, selection.membership, workspace, profile, availableWorkspaces);
 }

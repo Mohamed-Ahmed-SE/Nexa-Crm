@@ -10,6 +10,7 @@ import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { signOutAction } from "@/lib/auth/actions";
 import { DateFormatProvider } from "@/components/auth/date-format-provider";
 import { UserAvatar } from "@/components/shell/user-avatar";
+import { WorkspaceSwitcher } from "@/components/shell/workspace-switcher";
 import type { WorkspaceContext } from "@/lib/auth/context";
 
 type AppShellProps = {
@@ -61,10 +62,7 @@ export function AppShell({ children, context }: AppShellProps) {
             </Link>
             <div aria-label="Nexa CRM workspace" className="workspace-identity">
               <UserAvatar key={context.avatarUrl ?? "no-avatar"} avatarUrl={context.avatarUrl} fullName={context.fullName} />
-              <span className="workspace-copy">
-                <span className="workspace-name">{context.workspaceName}</span>
-                <span className="workspace-caption">{context.fullName} · {context.role}</span>
-              </span>
+              <WorkspaceSwitcher context={context} />
             </div>
             <form action={signOutAction}>
               <button className="sign-out-button" type="submit">Sign out</button>
