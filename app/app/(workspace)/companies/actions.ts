@@ -179,6 +179,28 @@ export async function addCompanyNoteAction(_previous: CompanyActionState, form: 
   return { ok: true };
 }
 
+export async function toggleCompanyNotePinnedAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {
+  const companyId = companyIdSchema.safeParse(value(form, "companyId"));
+  const noteId = companyIdSchema.safeParse(value(form, "noteId"));
+  if (!companyId.success || !noteId.success) return { message: "This note could not be identified." };
+  const access = await companyAccess(companyId.data);
+  if (!access.supabase || !access.company) return { message: access.message ?? "Company not found." };
+  const { context, supabase } = access;
+  const { data: note, error: lookupError } = await supabase.from("notes").select("id, is_pinned, created_by")
+    .eq("workspace_id", context.workspaceId).eq("related_entity_type", "company")
+    .eq("related_entity_id", companyId.data).eq("id", noteId.data).maybeSingle();
+  if (lookupError || !note) return { message: "Note could not be updated. Refresh the company and try again." };
+  if (!hasWorkspacePermission(context.role, "crm.edit.all") && note.created_by !== context.userId) {
+    return { message: "You can update only your own notes." };
+  }
+  const { data: updatedNote, error: updateError } = await supabase.from("notes").update({ is_pinned: !note.is_pinned })
+    .eq("workspace_id", context.workspaceId).eq("related_entity_type", "company")
+    .eq("related_entity_id", companyId.data).eq("id", noteId.data).select("id").maybeSingle();
+  if (updateError || !updatedNote) return { message: "Note could not be updated. Refresh the company and try again." };
+  revalidatePath(`/app/companies/${companyId.data}`);
+  return { ok: true, message: `Note ${note.is_pinned ? "unpinned" : "pinned"}.` };
+}
+
 export async function createCompanyTaskAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {
   const id = companyIdSchema.safeParse(value(form, "companyId"));
   const parsed = companyTaskSchema.safeParse({ title: value(form, "title"), description: value(form, "description"), type: value(form, "type"), priority: value(form, "priority"), dueAt: normalizeContactDateTime(value(form, "dueAt"), value(form, "timezoneOffset")), assignedTo: value(form, "assignedTo") });

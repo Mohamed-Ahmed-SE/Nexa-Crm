@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Building2, CalendarClock, Check, ChevronLeft, ChevronRight, Globe, Mail, Plus, Search, X } from "lucide-react";
-import { addCompanyNoteAction, archiveCompanyAction, completeCompanyTaskAction, createCompanyAction, createCompanyTaskAction, logCompanyActivityAction, updateCompanyAction, uploadCompanyFileAction, type CompanyActionState } from "./actions";
+import { ArrowLeft, Building2, CalendarClock, Check, ChevronLeft, ChevronRight, Globe, Mail, Pin, Plus, Search, X } from "lucide-react";
+import { addCompanyNoteAction, archiveCompanyAction, completeCompanyTaskAction, createCompanyAction, createCompanyTaskAction, logCompanyActivityAction, toggleCompanyNotePinnedAction, updateCompanyAction, uploadCompanyFileAction, type CompanyActionState } from "./actions";
 import { type CompanyDetail, type CompanyListRow, type CompanyOwner } from "@/lib/companies/repository";
 import { companyPageSize } from "@/lib/companies/schema";
 import { useDateFormat } from "@/components/auth/date-format-provider";
@@ -133,7 +133,7 @@ function Field({ label, name, type = "text", defaultValue, required = false, pla
   return <label className="leads-field"><span>{label}{required && <em>Required</em>}</span><input aria-invalid={Boolean(error)} name={name} type={type} defaultValue={defaultValue} required={required} placeholder={placeholder} min={min} />{error && <small>{error}</small>}</label>;
 }
 
-export function CompanyDetailWorkspace({ detail, owners, section, canEdit, canReassign, canArchive, currentUserId, startEditing = false }: { detail: CompanyDetail; owners: CompanyOwner[]; section: string; canEdit: boolean; canReassign: boolean; canArchive: boolean; currentUserId: string; startEditing?: boolean }) {
+export function CompanyDetailWorkspace({ detail, owners, section, canEdit, canEditAll, canReassign, canArchive, currentUserId, startEditing = false }: { detail: CompanyDetail; owners: CompanyOwner[]; section: string; canEdit: boolean; canEditAll: boolean; canReassign: boolean; canArchive: boolean; currentUserId: string; startEditing?: boolean }) {
   const dateFormat = useDateFormat();
   const { company, contacts, deals, activities, tasks, notes, attachments } = detail;
   const [editing, setEditing] = useState(startEditing);
@@ -167,7 +167,7 @@ export function CompanyDetailWorkspace({ detail, owners, section, canEdit, canRe
     {normalizedSection === "Deals" && <section className="contact-section"><SectionTitle title="Deals" />{deals.length ? <ul className="company-record-list">{deals.map((deal) => <li key={deal.id}><div><strong>{deal.title}</strong><small>{deal.stage?.name ?? deal.status} · {deal.expected_close_date ? dateOnly(deal.expected_close_date, dateFormat) : "No close date"}</small></div><span>{money(Number(deal.amount), deal.currency)}</span></li>)}</ul> : <EmptyDetail text="No deals are linked to this company." />}</section>}
     {normalizedSection === "Activity" && <><section className="contact-section"><SectionTitle title="Activity" />{activities.length ? <ActivityList activities={activities} dateFormat={dateFormat} /> : <EmptyDetail text="No company activity has been recorded." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="activity" />}</>}
     {normalizedSection === "Tasks" && <><section className="contact-section"><SectionTitle title="Tasks" />{tasks.length ? <TaskList tasks={tasks} companyId={company.id} canComplete={canEdit} currentUserId={currentUserId} action={doneAction} pending={completing} dateFormat={dateFormat} /> : <EmptyDetail text="No tasks are linked to this company." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="task" owners={owners} canReassign={canReassign} currentUserId={currentUserId} />}</>}
-    {normalizedSection === "Notes" && <><section className="contact-section"><SectionTitle title="Notes" />{notes.length ? <ul className="company-notes">{notes.map((note) => <li key={note.id}><p>{note.body}</p><time dateTime={note.created_at}>{dateTime(note.created_at, dateFormat)}</time></li>)}</ul> : <EmptyDetail text="No notes have been added." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="note" />}</>}
+    {normalizedSection === "Notes" && <><section className="contact-section"><SectionTitle title="Notes" />{notes.length ? <ul className="company-notes">{notes.map((note) => <li key={note.id}><p>{note.body}</p><div><time dateTime={note.created_at}>{dateTime(note.created_at, dateFormat)}</time>{note.is_pinned && <span aria-label="Pinned" className="contact-note-pinned"><Pin aria-hidden="true" size={12} />Pinned</span>}{canEdit && (canEditAll || note.created_by === currentUserId) && <CompanyNotePinControl companyId={company.id} note={note} />}</div></li>)}</ul> : <EmptyDetail text="No notes have been added." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="note" />}</>}
     {normalizedSection === "Files" && <section className="contact-section"><SectionTitle title="Files" />{attachments.length ? <ul className="contact-file-list">{attachments.map((file) => <li key={file.id}><div><strong>{file.filename}</strong><small>{(file.size_bytes / 1024).toFixed(0)} KB · {dateOnly(file.created_at, dateFormat)}</small></div><Link className="leads-secondary-button" href={`/app/companies/files/${file.id}`}>Download</Link></li>)}</ul> : <EmptyDetail text="No files have been uploaded." />}{canEdit && <FileUpload companyId={company.id} />}</section>}
     </div>
     <aside aria-label="Company details" className="contact-detail-rail"><section className="contact-rail-section"><SectionTitle title="Company properties" /><dl className="company-rail-properties"><Property label="Industry" value={company.industry} /><Property label="Employees" value={employeeBand(company.employee_size)} /><Property label="Phone" value={company.phone} /><Property label="Address" value={[company.address_line_1, company.address_line_2, company.city, company.state, company.postal_code, company.country].filter(Boolean).join(", ") || null} /><Property label="Website" value={company.website} /></dl></section><section className="contact-rail-section"><SectionTitle title="Key contacts" />{keyContacts.length ? <ul className="company-key-contacts">{keyContacts.map((contact) => <li key={contact.id}><Link href={`/app/contacts/${contact.id}`}><strong>{contact.first_name} {contact.last_name}</strong><small>{contact.job_title || contact.email}</small></Link></li>)}</ul> : <EmptyDetail text="No key contacts available." />}</section><section className="contact-rail-section"><SectionTitle title="Next task" />{nextTask ? <div className="company-next-task"><strong>{nextTask.title}</strong><span><CalendarClock size={14} />{dateTime(nextTask.due_at, dateFormat)}</span></div> : <EmptyDetail text="No upcoming tasks." />}</section></aside></div>
@@ -184,6 +184,18 @@ function ActivityList({ activities, dateFormat }: { activities: CompanyDetail["a
 function TaskList({ tasks, companyId, canComplete, currentUserId, action, pending, dateFormat }: { tasks: CompanyDetail["tasks"]; companyId: string; canComplete: boolean; currentUserId: string; action: (form: FormData) => void; pending: boolean; dateFormat: DateFormat }) {
   return <ul className="contact-task-list company-task-list">{tasks.map((task) => <li key={task.id}><div><strong>{task.title}</strong><small>{task.priority} priority · {dateOnly(task.due_at, dateFormat)}</small>{task.description && <p>{task.description}</p>}</div>{task.status === "open" && (canComplete || task.assigned_to === currentUserId) && <form action={action}><input name="taskId" type="hidden" value={task.id} /><input name="companyId" type="hidden" value={companyId} /><button aria-label={`Complete ${task.title}`} className="leads-icon-button" disabled={pending} type="submit"><Check size={14} /></button></form>}<span className="leads-status">{task.status}</span></li>)}</ul>;
 }
+function CompanyNotePinControl({ companyId, note }: { companyId: string; note: CompanyDetail["notes"][number] }) {
+  const [state, formAction, pending] = useActionState(toggleCompanyNotePinnedAction, emptyState);
+  useRefreshOnSuccess(state);
+  return <form action={formAction}>
+    <input name="companyId" type="hidden" value={companyId} /><input name="noteId" type="hidden" value={note.id} />
+    <button aria-label={`${note.is_pinned ? "Unpin" : "Pin"} note`} className="leads-secondary-button" disabled={pending} type="submit">
+      <Pin aria-hidden="true" size={12} />{pending ? "Saving…" : note.is_pinned ? "Unpin" : "Pin"}
+    </button>
+    {state.message && <p aria-live="polite" className={state.ok ? "contact-success" : "contact-form-error"} role={state.ok ? "status" : "alert"}>{state.message}</p>}
+  </form>;
+}
+
 function localDateTimeInput(dateTime: Date) { return new Date(dateTime.getTime() - dateTime.getTimezoneOffset() * 60000).toISOString().slice(0, 16); }
 function captureCompanyTimezoneOffset(event: React.FormEvent<HTMLFormElement>) {
   const form = event.currentTarget;
