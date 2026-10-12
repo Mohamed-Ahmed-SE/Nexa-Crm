@@ -1,7 +1,7 @@
 import "server-only";
 
 import { formatTaskOwners } from "@/lib/tasks/owner-labels";
-import { escapeTaskSearchTerm, restrictAllTasksView, taskDateBounds, taskPageSize, taskWeekBounds, type TaskSearchParams } from "@/lib/tasks/schema";
+import { escapeTaskSearchTerm, restrictAllTasksView, taskDateBounds, taskLocalDateBounds, taskPageSize, taskWeekBounds, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
@@ -42,10 +42,7 @@ export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, user
   const { start, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
   let query = supabase.from("tasks").select("id,title,description,task_type,status,priority,due_at,reminder_at,assigned_to,created_by,related_entity_type,related_entity_id,completed_at", { count: "exact" })
     .eq("workspace_id", workspaceId);
-  query = params.sort === "title"
-    ? query.order("title", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false })
-    : query.order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
-  query = query.range((params.page - 1) * taskPageSize, params.page * taskPageSize - 1);
+  if (!canReassign) query = query.eq("assigned_to", userId);
   switch (view) {
     case "my": query = query.eq("assigned_to", userId).eq("status", "open"); break;
     case "today": query = query.eq("status", "open").gte("due_at", start.toISOString()).lt("due_at", tomorrow.toISOString()); break;
@@ -54,12 +51,20 @@ export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, user
     case "completed": query = query.eq("status", "completed"); break;
     case "all": query = query.eq("status", "open"); break;
   }
+  if (params.date) {
+    const { start: dayStart, end: dayEnd } = taskLocalDateBounds(params.date, params.timeZone);
+    query = query.gte("due_at", dayStart.toISOString()).lt("due_at", dayEnd.toISOString());
+  }
   if (params.priority !== "all") query = query.eq("priority", params.priority);
   if (params.type !== "all") query = query.eq("task_type", params.type);
   if (params.q) {
     const term = escapeTaskSearchTerm(params.q);
     query = query.or(`title.ilike."%${term}%",description.ilike."%${term}%"`);
   }
+  query = params.sort === "title"
+    ? query.order("title", { ascending: true }).order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false })
+    : query.order("due_at", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false });
+  query = query.range((params.page - 1) * taskPageSize, params.page * taskPageSize - 1);
   const [result, ownersResult] = await Promise.all([
     query,
     supabase.rpc("list_reassignable_workspace_members", { target_workspace_id: workspaceId, target_user_id: null, target_lead_id: null }),
@@ -70,6 +75,48 @@ export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, user
   const tasks: TaskRow[] = raw.map((task) => ({ ...task, relation: task.related_entity_id && task.related_entity_type ? relations.get(`${task.related_entity_type}:${task.related_entity_id}`) ?? null : null })) as TaskRow[];
   const owners = formatTaskOwners(ownersResult.data ?? [], userId);
   return { tasks, owners, matchedCount: result.count ?? 0 };
+}
+
+export async function listTaskCalendarRecords(supabase: Supabase, { workspaceId, userId, canReassign, params, calendarMonth, now = new Date() }: {
+  workspaceId: string; userId: string; canReassign: boolean; params: TaskSearchParams; calendarMonth: string; now?: Date;
+}) {
+  const [year, month] = calendarMonth.split("-").map(Number);
+  const start = taskLocalDateBounds(`${calendarMonth}-01`, params.timeZone).start;
+  const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7);
+  const end = taskLocalDateBounds(`${nextMonth}-01`, params.timeZone).start;
+  const { view } = canReassign ? params : restrictAllTasksView(params);
+  const { start: today, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
+  let query = supabase.from("tasks").select("due_at").eq("workspace_id", workspaceId).not("due_at", "is", null)
+    .gte("due_at", start.toISOString()).lt("due_at", end.toISOString());
+  if (!canReassign) query = query.eq("assigned_to", userId);
+  switch (view) {
+    case "my": query = query.eq("assigned_to", userId).eq("status", "open"); break;
+    case "today": query = query.eq("status", "open").gte("due_at", today.toISOString()).lt("due_at", tomorrow.toISOString()); break;
+    case "upcoming": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()); break;
+    case "overdue": query = query.eq("status", "open").lt("due_at", today.toISOString()); break;
+    case "completed": query = query.eq("status", "completed"); break;
+    case "all": query = query.eq("status", "open"); break;
+  }
+  if (params.priority !== "all") query = query.eq("priority", params.priority);
+  if (params.type !== "all") query = query.eq("task_type", params.type);
+  if (params.q) {
+    const term = escapeTaskSearchTerm(params.q);
+    query = query.or(`title.ilike."%${term}%",description.ilike."%${term}%"`);
+  }
+  const { data, error } = await query;
+  if (error) throw new Error("Unable to load task calendar.");
+  return (data ?? []).flatMap(({ due_at }) => due_at ? [new Intl.DateTimeFormat("en-CA", { timeZone: params.timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(due_at))] : []);
+}
+
+export async function countTaskCompletionSummary(supabase: Supabase, workspaceId: string, userId: string, canReassign: boolean) {
+  const countStatus = (status: TaskRow["status"]) => {
+    let query = supabase.from("tasks").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("status", status);
+    if (!canReassign) query = query.eq("assigned_to", userId);
+    return query;
+  };
+  const [open, completed, cancelled] = await Promise.all([countStatus("open"), countStatus("completed"), countStatus("cancelled")]);
+  if (open.error || completed.error || cancelled.error) throw new Error("Unable to load task completion summary.");
+  return { open: open.count ?? 0, completed: completed.count ?? 0, cancelled: cancelled.count ?? 0 };
 }
 
 async function loadTaskRelations(supabase: Supabase, workspaceId: string, tasks: Array<{ related_entity_type: string | null; related_entity_id: string | null }>) {

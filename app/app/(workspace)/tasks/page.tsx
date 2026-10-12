@@ -1,6 +1,6 @@
 import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
-import { countWorkspaceTaskOverview, listTaskOptions, listWorkspaceTasks } from "@/lib/tasks/repository";
+import { countTaskCompletionSummary, countWorkspaceTaskOverview, listTaskCalendarRecords, listTaskOptions, listWorkspaceTasks } from "@/lib/tasks/repository";
 import { parseTaskSearchParams, restrictAllTasksView } from "@/lib/tasks/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { TasksWorkspace } from "./tasks-workspace";
@@ -13,11 +13,21 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
   const supabase = await createSupabaseServerClient();
   if (!supabase) throw new Error("Supabase server client is unavailable.");
   const canCreate = hasWorkspacePermission(context.role, "crm.create");
-  const [data, options, overview] = await Promise.all([
-    listWorkspaceTasks(supabase, { workspaceId: context.workspaceId, userId: context.userId, params, canReassign }),
+  const now = new Date();
+  const dateParts = new Intl.DateTimeFormat("en-US", { timeZone: params.timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const localDate = `${dateParts.find(({ type }) => type === "year")?.value}-${dateParts.find(({ type }) => type === "month")?.value}-${dateParts.find(({ type }) => type === "day")?.value}`;
+  const railDate = params.date ?? localDate;
+  const calendarMonth = params.calendarMonth ?? railDate.slice(0, 7);
+  const railParams = { ...params, date: railDate, page: 1 };
+  const [data, options, overview, rail, calendarRecords, completion] = await Promise.all([
+    listWorkspaceTasks(supabase, { workspaceId: context.workspaceId, userId: context.userId, params, canReassign, now }),
     canCreate ? listTaskOptions(supabase, context.workspaceId, context.userId, canReassign) : Promise.resolve([]),
-    countWorkspaceTaskOverview(supabase, context.workspaceId, params),
+    countWorkspaceTaskOverview(supabase, context.workspaceId, params, now),
+    listWorkspaceTasks(supabase, { workspaceId: context.workspaceId, userId: context.userId, params: railParams, canReassign, now }),
+    listTaskCalendarRecords(supabase, { workspaceId: context.workspaceId, userId: context.userId, canReassign, params, calendarMonth, now }),
+    countTaskCompletionSummary(supabase, context.workspaceId, context.userId, canReassign),
   ]);
   return <TasksWorkspace tasks={data.tasks} owners={data.owners} options={options} matchedCount={data.matchedCount} overview={overview} params={params}
+    railTasks={rail.tasks} railTaskCount={rail.matchedCount} calendarMonth={calendarMonth} calendarTaskDates={calendarRecords} railDate={railDate} completion={completion}
     canCreate={canCreate} canEdit={hasWorkspacePermission(context.role, "crm.edit.own")} canReassign={canReassign} canExport={hasWorkspacePermission(context.role, "data.export")} currentUserId={context.userId} />;
 }

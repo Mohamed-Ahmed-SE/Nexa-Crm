@@ -1,0 +1,315 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 268px;
+  align-items: start;
+  gap: 14px;
+}
+
+.rail {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.section {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  border-radius: 10px;
+  background: hsl(var(--surface));
+}
+
+.sectionHeader {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 11px;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.sectionHeader h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.monthNavigation {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.monthNavigation a {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 6px;
+  color: hsl(var(--muted-foreground));
+}
+
+.monthNavigation a:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+.monthNavigation strong {
+  min-width: 96px;
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px;
+  padding: 9px;
+}
+
+.weekday {
+  padding: 3px 0 5px;
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.day,
+.daySpacer {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  aspect-ratio: 1;
+  place-items: center;
+}
+
+.day {
+  border-radius: 7px;
+  color: hsl(var(--foreground));
+  font-size: 10px;
+  text-decoration: none;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.day:hover {
+  background: hsl(var(--muted));
+}
+
+.day.selected {
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground, 0 0% 100%));
+  font-weight: 650;
+}
+
+.dayMarker {
+  position: absolute;
+  bottom: 3px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+}
+
+.day.selected .dayMarker {
+  background: currentColor;
+}
+
+.clearDate {
+  display: inline-block;
+  margin: 0 10px 10px;
+  color: hsl(var(--primary));
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.clearDate:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.count {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 99px;
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.taskList {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0 10px;
+  list-style: none;
+}
+
+.taskList li {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 7px;
+  padding: 9px 0;
+  border-bottom: 1px solid hsl(var(--border) / .75);
+}
+
+.taskList li:last-child {
+  border-bottom: 0;
+}
+
+.taskMarker {
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+}
+
+.taskMarker.completed {
+  background: hsl(153 57% 38%);
+}
+
+.taskMarker.cancelled {
+  background: hsl(var(--muted-foreground));
+}
+
+.taskList li > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.taskList strong {
+  overflow: hidden;
+  color: hsl(var(--foreground));
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taskList li > div > span,
+.taskStatus {
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+}
+
+.taskStatus {
+  padding-top: 1px;
+  white-space: nowrap;
+}
+
+.empty {
+  margin: 0;
+  padding: 12px 11px;
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.moreTasks {
+  margin: 0;
+  padding: 0 10px 9px;
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+}
+
+.completionText {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 11px 11px 8px;
+}
+
+.completionText strong {
+  color: hsl(var(--foreground));
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.completionText span {
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+  text-align: right;
+}
+
+.progress {
+  display: block;
+  width: calc(100% - 22px);
+  height: 5px;
+  margin: 0 11px 11px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 99px;
+  background: hsl(var(--muted));
+  color: hsl(var(--primary));
+  accent-color: hsl(var(--primary));
+}
+
+.statusCounts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  padding: 0 11px 11px;
+}
+
+.statusCounts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  color: hsl(var(--muted-foreground));
+  font-size: 9px;
+}
+
+.statusCounts dd {
+  margin: 0;
+  color: hsl(var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1050px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 240px;
+    gap: 10px;
+  }
+}
+
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .rail > .section:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 480px) {
+  .rail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail > .section:first-child {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .day {
+    transition: none;
+  }
+}

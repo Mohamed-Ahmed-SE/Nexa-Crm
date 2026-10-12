@@ -18,6 +18,9 @@ const paramsSchema = z.object({
   tomorrowTimezoneOffset: z.number().int().min(-840).max(840).catch(0),
   weekStartTimezoneOffset: z.number().int().min(-840).max(840).catch(0),
   nextWeekTimezoneOffset: z.number().int().min(-840).max(840).catch(0),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isCalendarDate).optional().catch(undefined),
+  calendarMonth: z.string().regex(/^\d{4}-\d{2}$/).refine(isCalendarMonth).optional().catch(undefined),
+  timeZone: z.string().max(100).refine(isValidTimeZone).catch("UTC"),
   page: z.coerce.number().int().min(1).max(10000).default(1),
 });
 export type TaskSearchParams = z.infer<typeof paramsSchema>;
@@ -33,9 +36,12 @@ export function parseTaskSearchParams(input: Record<string, string | string[] | 
     tomorrowTimezoneOffset: typeof input.tomorrowTimezoneOffset === "string" ? Number(input.tomorrowTimezoneOffset) : 0,
     weekStartTimezoneOffset: typeof input.weekStartTimezoneOffset === "string" ? Number(input.weekStartTimezoneOffset) : 0,
     nextWeekTimezoneOffset: typeof input.nextWeekTimezoneOffset === "string" ? Number(input.nextWeekTimezoneOffset) : 0,
+    date: typeof input.date === "string" ? input.date : undefined,
+    calendarMonth: typeof input.calendarMonth === "string" ? input.calendarMonth : undefined,
+    timeZone: typeof input.timeZone === "string" ? input.timeZone : "UTC",
     page: typeof input.page === "string" ? input.page : "1",
   });
-  return parsed.success ? parsed.data : { view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, page: 1 };
+  return parsed.success ? parsed.data : { view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, timeZone: "UTC", page: 1 };
 }
 
 export function restrictAllTasksView(params: TaskSearchParams): TaskSearchParams {
@@ -96,6 +102,37 @@ export const taskPageSize = 25;
 
 export function escapeTaskSearchTerm(query: string): string {
   return query.trim().replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_").replaceAll('"', '\\"');
+}
+
+export function isCalendarDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function isCalendarMonth(value: string) {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+}
+
+export function taskLocalDateBounds(date: string, timeZone: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const start = zonedLocalMidnightUtc(year, month, day, timeZone);
+  const end = zonedLocalMidnightUtc(year, month, day + 1, timeZone);
+  return { start: new Date(start), end: new Date(end) };
+}
+
+function zonedLocalMidnightUtc(year: number, month: number, day: number, timeZone: string) {
+  const target = Date.UTC(year, month - 1, day);
+  let candidate = target;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(new Date(candidate));
+    const local = Object.fromEntries(parts.filter(({ type }) => ["year", "month", "day", "hour", "minute", "second"].includes(type)).map(({ type, value }) => [type, Number(value)]));
+    const represented = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+    const correction = target - represented;
+    candidate += correction;
+    if (correction === 0) break;
+  }
+  return candidate;
 }
 
 export function taskDateBounds(now: Date, timezoneOffset: number, tomorrowTimezoneOffset = timezoneOffset) {

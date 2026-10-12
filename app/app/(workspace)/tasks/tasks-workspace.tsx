@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { CalendarDays, Check, Plus } from "lucide-react";
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import styles from "./tasks-workspace.module.css";
 import { completeTaskAction, createTaskAction, rescheduleTaskAction, type TaskActionState } from "./actions";
 import { taskPageSize, taskTypes, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { TaskOption, TaskOwner, TaskOverviewCounts, TaskRow } from "@/lib/tasks/repository";
@@ -21,8 +22,10 @@ const allTaskColumnsVisible: Record<OptionalTaskColumn, boolean> = {
   Type: true, "Related to": true, "Due date": true, Assignee: true, Priority: true, Status: true,
 };
 
-export function TasksWorkspace({ tasks, owners, options, matchedCount, overview, params, canCreate, canEdit, canReassign, canExport, currentUserId }: {
+export function TasksWorkspace({ tasks, owners, options, matchedCount, overview, params, railTasks, railTaskCount, calendarMonth, calendarTaskDates, railDate, completion, canCreate, canEdit, canReassign, canExport, currentUserId }: {
   tasks: TaskRow[]; owners: TaskOwner[]; options: TaskOption[]; matchedCount: number; overview: TaskOverviewCounts; params: TaskSearchParams;
+  railTasks: TaskRow[]; railTaskCount: number; calendarMonth: string; calendarTaskDates: string[]; railDate: string;
+  completion: { open: number; completed: number; cancelled: number };
   canCreate: boolean; canEdit: boolean; canReassign: boolean; canExport: boolean; currentUserId: string;
 }) {
   const dateFormat = useDateFormat();
@@ -34,7 +37,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
   const [reschedulingTask, setReschedulingTask] = useState<TaskRow | null>(null);
   const [visibleColumns, setVisibleColumns] = useState(allTaskColumnsVisible);
   const pageCount = Math.max(1, Math.ceil(matchedCount / taskPageSize));
-  const { view, q, type, priority, sort, page, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset, weekStartTimezoneOffset: currentWeekStartTimezoneOffset, nextWeekTimezoneOffset: currentNextWeekTimezoneOffset } = params;
+  const { view, q, type, priority, sort, page, timeZone, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset, weekStartTimezoneOffset: currentWeekStartTimezoneOffset, nextWeekTimezoneOffset: currentNextWeekTimezoneOffset } = params;
   useEffect(() => {
     const now = new Date();
     const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
@@ -45,10 +48,11 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
     const tomorrowTimezoneOffset = tomorrow.getTimezoneOffset();
     const weekStartTimezoneOffset = weekStart.getTimezoneOffset();
     const nextWeekTimezoneOffset = nextWeek.getTimezoneOffset();
-    if (currentTimezoneOffset !== timezoneOffset || currentTomorrowTimezoneOffset !== tomorrowTimezoneOffset || currentWeekStartTimezoneOffset !== weekStartTimezoneOffset || currentNextWeekTimezoneOffset !== nextWeekTimezoneOffset) {
-      router.replace(tasksHref({ view, q, type, priority, sort, page, timezoneOffset, tomorrowTimezoneOffset, weekStartTimezoneOffset, nextWeekTimezoneOffset }));
+    const browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (currentTimezoneOffset !== timezoneOffset || currentTomorrowTimezoneOffset !== tomorrowTimezoneOffset || currentWeekStartTimezoneOffset !== weekStartTimezoneOffset || currentNextWeekTimezoneOffset !== nextWeekTimezoneOffset || timeZone !== browserTimeZone) {
+      router.replace(tasksHref({ ...params, timezoneOffset, tomorrowTimezoneOffset, weekStartTimezoneOffset, nextWeekTimezoneOffset, timeZone: browserTimeZone }));
     }
-  }, [view, q, type, priority, sort, page, currentTimezoneOffset, currentTomorrowTimezoneOffset, currentWeekStartTimezoneOffset, currentNextWeekTimezoneOffset, router]);
+  }, [view, q, type, priority, sort, page, timeZone, params, currentTimezoneOffset, currentTomorrowTimezoneOffset, currentWeekStartTimezoneOffset, currentNextWeekTimezoneOffset, router]);
 
   function complete(id: string) {
     setPendingId(id); setNotice(""); setNoticeIsError(false);
@@ -74,9 +78,10 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
     <header className="tasks-header"><div><h1 className="page-title">Tasks</h1><p className="page-description">Keep follow-ups and sales activities organized.</p></div>{canCreate && <button className="tasks-primary-button" onClick={() => setFormOpen(true)} type="button"><Plus aria-hidden="true" size={16} />Add Task</button>}</header>
     <TaskOverviewCards counts={overview} />
     <nav aria-label="Task views" className="tasks-tabs">{Object.entries(viewLabels).filter(([view]) => view !== "all" || canReassign).map(([view, label]) => <Link aria-current={params.view === view ? "page" : undefined} className={params.view === view ? "is-active" : ""} href={tasksHref({ ...params, view: view as TaskSearchParams["view"], page: 1 })} key={view}>{label}</Link>)}</nav>
+    <div className={styles.layout}>
     <section aria-label="Tasks" className="tasks-panel">
       <form action="/app/tasks" className="tasks-toolbar" method="get">
-        <input name="view" type="hidden" value={params.view} /><input name="timezoneOffset" type="hidden" value={params.timezoneOffset} /><input name="tomorrowTimezoneOffset" type="hidden" value={params.tomorrowTimezoneOffset} /><input name="weekStartTimezoneOffset" type="hidden" value={params.weekStartTimezoneOffset} /><input name="nextWeekTimezoneOffset" type="hidden" value={params.nextWeekTimezoneOffset} />
+        <input name="view" type="hidden" value={params.view} /><input name="timezoneOffset" type="hidden" value={params.timezoneOffset} /><input name="tomorrowTimezoneOffset" type="hidden" value={params.tomorrowTimezoneOffset} /><input name="weekStartTimezoneOffset" type="hidden" value={params.weekStartTimezoneOffset} /><input name="nextWeekTimezoneOffset" type="hidden" value={params.nextWeekTimezoneOffset} /><input name="timeZone" type="hidden" value={params.timeZone} />{params.date && <input name="date" type="hidden" value={params.date} />}{params.calendarMonth && <input name="calendarMonth" type="hidden" value={params.calendarMonth} />}
         <label className="tasks-search"><span className="sr-only">Search tasks</span><input autoComplete="off" defaultValue={params.q} maxLength={100} name="q" placeholder="Search task title or description" type="search" /></label>
         <label className="tasks-filter"><span className="sr-only">Filter by type</span><select aria-label="Filter by type" defaultValue={params.type} name="type"><option value="all">All types</option>{taskTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select></label>
         <label className="tasks-filter"><span className="sr-only">Filter by priority</span><select aria-label="Filter by priority" defaultValue={params.priority} name="priority"><option value="all">All priorities</option>{Object.entries(priorityLabels).map(([priority, label]) => <option key={priority} value={priority}>{label}</option>)}</select></label>
@@ -99,6 +104,10 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
       {tasks.length === 0 && <div className="tasks-empty"><CalendarDays aria-hidden="true" size={22} /><h2>{hasFilters(params) ? "No matching tasks" : params.view === "completed" ? "No completed tasks yet" : "No tasks to show"}</h2><p>{hasFilters(params) ? "Try changing or clearing your search and filters." : params.view === "my" ? "Tasks assigned to you will appear here." : params.view === "all" ? "Open tasks in this workspace will appear here." : `Tasks in ${viewLabels[params.view].toLowerCase()} will appear here.`}</p>{canCreate && !hasFilters(params) && params.view === "my" && <button className="tasks-secondary-button" onClick={() => setFormOpen(true)} type="button">Create your first task</button>}</div>}
       <nav aria-label="Task pages" className="tasks-pagination"><span>{matchedCount === 0 ? "0 tasks" : `${(params.page - 1) * taskPageSize + 1}–${Math.min(params.page * taskPageSize, matchedCount)} of ${matchedCount} tasks`}</span><div>{params.page <= 1 ? <span aria-disabled="true" className="is-disabled">Previous</span> : <Link href={tasksHref({ ...params, page: params.page - 1 })}>Previous</Link>}<span>Page {params.page} of {pageCount}</span>{params.page >= pageCount ? <span aria-disabled="true" className="is-disabled">Next</span> : <Link href={tasksHref({ ...params, page: params.page + 1 })}>Next</Link>}</div></nav>
     </section>
+    <aside aria-label="Task calendar and summary" className={styles.rail}>
+      <TaskCalendar params={params} calendarMonth={calendarMonth} calendarTaskDates={calendarTaskDates} railDate={railDate} railTaskCount={railTaskCount} railTasks={railTasks} completion={completion} />
+    </aside>
+    </div>
     <p aria-live={noticeIsError ? "assertive" : "polite"} className="tasks-notice" role={noticeIsError ? "alert" : "status"}>{notice}</p>
     {formOpen && <TaskForm currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} onClose={() => setFormOpen(false)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setFormOpen(false); router.refresh(); }} />}
     {reschedulingTask && <RescheduleTaskDialog task={reschedulingTask} onClose={() => setReschedulingTask(null)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setReschedulingTask(null); router.refresh(); }} />}
@@ -115,6 +124,85 @@ function TaskOverviewCards({ counts }: { counts: TaskOverviewCounts }) {
   return <section aria-label="Task overview" className="tasks-overview">
     <h2 className="sr-only">Task overview</h2>
     <dl>{cards.map(({ label, count }) => <div className="tasks-overview-card" key={label}><dt>{label}</dt><dd>{count.toLocaleString()}</dd></div>)}</dl>
+  </section>;
+}
+
+function TaskCalendar({ params, calendarMonth, calendarTaskDates, railDate, railTasks, railTaskCount, completion }: {
+  params: TaskSearchParams; calendarMonth: string; calendarTaskDates: string[]; railDate: string; railTasks: TaskRow[]; railTaskCount: number;
+  completion: { open: number; completed: number; cancelled: number };
+}) {
+  return <>
+    <CalendarSection params={params} calendarMonth={calendarMonth} taskDates={calendarTaskDates} selectedDate={params.date ?? railDate} />
+    <DayTaskList params={params} date={railDate} tasks={railTasks} taskCount={railTaskCount} />
+    <CompletionSummary counts={completion} />
+  </>;
+}
+
+function CalendarSection({ params, calendarMonth, taskDates, selectedDate }: { params: TaskSearchParams; calendarMonth: string; taskDates: string[]; selectedDate: string }) {
+  const [year, month] = calendarMonth.split("-").map(Number);
+  const firstDay = new Date(Date.UTC(year, month - 1, 1));
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells = buildCalendarCells(calendarMonth, (firstDay.getUTCDay() + 6) % 7, days);
+  const previousMonth = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
+  const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7);
+  const monthLabel = firstDay.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+  return <section aria-label="Task calendar" className={styles.section}>
+    <CalendarMonthControls params={params} previousMonth={previousMonth} nextMonth={nextMonth} label={monthLabel} />
+    <CalendarGrid cells={cells} month={calendarMonth} selectedDate={selectedDate.startsWith(calendarMonth) ? selectedDate : ""} taskDates={taskDates} params={params} />
+    {params.date && <Link className={styles.clearDate} href={tasksHref({ ...params, date: undefined, calendarMonth, page: 1 })}>Clear day filter</Link>}
+  </section>;
+}
+
+function CalendarMonthControls({ params, previousMonth, nextMonth, label }: { params: TaskSearchParams; previousMonth: string; nextMonth: string; label: string }) {
+  return <header className={styles.sectionHeader}><h2>Calendar</h2><nav aria-label="Calendar month navigation" className={styles.monthNavigation}>
+    <Link aria-label="Previous month" href={tasksHref({ ...params, calendarMonth: previousMonth, page: 1 })}><ChevronLeft aria-hidden="true" size={15} /></Link>
+    <strong aria-live="polite">{label}</strong>
+    <Link aria-label="Next month" href={tasksHref({ ...params, calendarMonth: nextMonth, page: 1 })}><ChevronRight aria-hidden="true" size={15} /></Link>
+  </nav></header>;
+}
+
+function CalendarGrid({ cells, month, selectedDate, taskDates, params }: { cells: Array<string | null>; month: string; selectedDate: string; taskDates: string[]; params: TaskSearchParams }) {
+  return <div className={styles.calendar}>
+    {(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const).map((day) => <span className={styles.weekday} key={day}>{day}</span>)}
+    {cells.map((date, index) => date ? <CalendarDay key={date} date={date} selected={date === selectedDate} hasTasks={taskDates.includes(date)} params={params} calendarMonth={month} /> : <span aria-hidden="true" className={styles.daySpacer} key={`spacer-${index}`} />)}
+  </div>;
+}
+
+function buildCalendarCells(month: string, leadingDays: number, dayCount: number) {
+  return Array.from({ length: leadingDays + dayCount }, (_, index) => index < leadingDays ? null : `${month}-${String(index - leadingDays + 1).padStart(2, "0")}`);
+}
+
+function CalendarDay({ date, selected, hasTasks, params, calendarMonth }: { date: string; selected: boolean; hasTasks: boolean; params: TaskSearchParams; calendarMonth: string }) {
+  const accessibleDate = new Date(`${date}T12:00:00.000Z`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return <Link aria-current={selected ? "date" : undefined} aria-label={`${accessibleDate}${hasTasks ? ", tasks due" : ""}`} className={`${styles.day} ${selected ? styles.selected : ""}`} href={tasksHref({ ...params, date, calendarMonth, page: 1 })}>
+    {Number(date.slice(-2))}{hasTasks && <span aria-hidden="true" className={styles.dayMarker} />}
+  </Link>;
+}
+
+function DayTaskList({ params, date, tasks, taskCount }: { params: TaskSearchParams; date: string; tasks: TaskRow[]; taskCount: number }) {
+  const dateFormat = useDateFormat();
+  const label = new Date(`${date}T12:00:00.000Z`).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return <section aria-labelledby="tasks-rail-title" className={styles.section}>
+    <header className={styles.sectionHeader}><h2 id="tasks-rail-title">{params.date ? `Tasks · ${label}` : "Today's Tasks"}</h2><span className={styles.count}>{taskCount}</span></header>
+    {tasks.length ? <ul className={styles.taskList}>{tasks.map((task) => <li key={task.id}>
+      <span aria-hidden="true" className={`${styles.taskMarker} ${task.status === "completed" ? styles.completed : task.status === "cancelled" ? styles.cancelled : ""}`} />
+      <div><strong>{task.title}</strong><span>{task.due_at ? formatDueDate(task.due_at, dateFormat) : "No due time"}</span></div>
+      <span className={styles.taskStatus}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span>
+    </li>)}</ul> : <p className={styles.empty}>{taskCount === 0 ? `No tasks due ${params.date ? "on this day" : "today"}.` : "No tasks match the current filters."}</p>}
+    {taskCount > tasks.length && <p className={styles.moreTasks}>Showing {tasks.length} of {taskCount} tasks</p>}
+  </section>;
+}
+
+function CompletionSummary({ counts }: { counts: { open: number; completed: number; cancelled: number } }) {
+  const total = counts.open + counts.completed + counts.cancelled;
+  const percentage = total === 0 ? 0 : Math.round((counts.completed / total) * 100);
+  return <section aria-labelledby="task-completion-title" className={styles.section}>
+    <header className={styles.sectionHeader}><h2 id="task-completion-title">Task completion</h2></header>
+    {total === 0 ? <p className={styles.empty}>No task records yet.</p> : <>
+      <div className={styles.completionText}><strong>{counts.completed.toLocaleString()} completed</strong><span>{percentage}% of {total.toLocaleString()} total tasks</span></div>
+      <progress aria-label="Task completion" className={styles.progress} max={total} value={counts.completed}>{percentage}%</progress>
+      <dl className={styles.statusCounts}><div><dt>Open</dt><dd>{counts.open.toLocaleString()}</dd></div><div><dt>Cancelled</dt><dd>{counts.cancelled.toLocaleString()}</dd></div></dl>
+    </>}
   </section>;
 }
 
@@ -226,5 +314,5 @@ function relationHref(type: TaskRow["related_entity_type"] & string, id: string)
   const section = type === "company" ? "companies" : type === "contact" ? "contacts" : "deals";
   return `/app/${section}/${id}`;
 }
-function hasFilters(params: TaskSearchParams) { return Boolean(params.q || params.priority !== "all" || params.type !== "all"); }
-function tasksHref(params: TaskSearchParams) { const query = new URLSearchParams(); if (params.view !== "my") query.set("view", params.view); if (params.q) query.set("q", params.q); if (params.type !== "all") query.set("type", params.type); if (params.priority !== "all") query.set("priority", params.priority); if (params.sort !== "due_date") query.set("sort", params.sort); if (params.timezoneOffset !== 0 || params.tomorrowTimezoneOffset !== 0 || params.weekStartTimezoneOffset !== 0 || params.nextWeekTimezoneOffset !== 0) { query.set("timezoneOffset", String(params.timezoneOffset)); query.set("tomorrowTimezoneOffset", String(params.tomorrowTimezoneOffset)); query.set("weekStartTimezoneOffset", String(params.weekStartTimezoneOffset)); query.set("nextWeekTimezoneOffset", String(params.nextWeekTimezoneOffset)); } if (params.page > 1) query.set("page", String(params.page)); const value = query.toString(); return `/app/tasks${value ? `?${value}` : ""}`; }
+function hasFilters(params: TaskSearchParams) { return Boolean(params.q || params.priority !== "all" || params.type !== "all" || params.date); }
+function tasksHref(params: TaskSearchParams) { const query = new URLSearchParams(); if (params.view !== "my") query.set("view", params.view); if (params.q) query.set("q", params.q); if (params.type !== "all") query.set("type", params.type); if (params.priority !== "all") query.set("priority", params.priority); if (params.sort !== "due_date") query.set("sort", params.sort); if (params.timezoneOffset !== 0 || params.tomorrowTimezoneOffset !== 0 || params.weekStartTimezoneOffset !== 0 || params.nextWeekTimezoneOffset !== 0) { query.set("timezoneOffset", String(params.timezoneOffset)); query.set("tomorrowTimezoneOffset", String(params.tomorrowTimezoneOffset)); query.set("weekStartTimezoneOffset", String(params.weekStartTimezoneOffset)); query.set("nextWeekTimezoneOffset", String(params.nextWeekTimezoneOffset)); } if (params.timeZone !== "UTC") query.set("timeZone", params.timeZone); if (params.date) query.set("date", params.date); if (params.calendarMonth) query.set("calendarMonth", params.calendarMonth); if (params.page > 1) query.set("page", String(params.page)); const value = query.toString(); return `/app/tasks${value ? `?${value}` : ""}`; }

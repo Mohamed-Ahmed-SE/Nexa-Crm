@@ -16,7 +16,7 @@ const task: TaskRow = {
   created_by: "c2155412-d8a0-4792-b2bc-f6064b2798f4", related_entity_type: "company", related_entity_id: "012be84b-6794-4e6a-a149-8d92c0a4d110",
   completed_at: null, relation: { id: "012be84b-6794-4e6a-a149-8d92c0a4d110", type: "company", label: "Northstar Labs" },
 };
-const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, overview: { dueToday: 3, overdue: 2, completedThisWeek: 7, upcoming: 11 }, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, page: 1 } as TaskSearchParams, canCreate: true, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
+const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, overview: { dueToday: 3, overdue: 2, completedThisWeek: 7, upcoming: 11 }, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, timeZone: "UTC", page: 1 } as TaskSearchParams, railTasks: [task], railTaskCount: 1, calendarMonth: "2026-04", calendarTaskDates: ["2026-04-05"], railDate: "2026-04-05", completion: { open: 4, completed: 7, cancelled: 1 }, canCreate: true, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
 
 function expectTaskTableColumnsAligned() {
   const table = screen.getByRole("table");
@@ -39,6 +39,34 @@ describe("TasksWorkspace", () => {
     expect(within(overview).getByText("7")).toBeInTheDocument();
     expect(within(overview).getByText("Upcoming")).toBeInTheDocument();
     expect(within(overview).getByText("11")).toBeInTheDocument();
+  });
+
+  it("renders the persisted day task list and honest status-count completion summary", () => {
+    render(<TasksWorkspace {...props} />);
+    expect(screen.getByRole("heading", { name: "Today's Tasks" })).toBeInTheDocument();
+    expect(within(screen.getByRole("list")).getByText("Send revised proposal")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "Task completion" })).toHaveAttribute("value", "7");
+    expect(screen.getByText("7 completed")).toBeInTheDocument();
+    expect(screen.getByText("58% of 12 total tasks")).toBeInTheDocument();
+    expect(screen.getByText("Cancelled")).toBeInTheDocument();
+  });
+
+  it("selects a calendar day and navigates months without dropping active filters", () => {
+    const params = { ...props.params, q: "proposal", type: "email" as const, priority: "high" as const, sort: "title" as const };
+    const { rerender } = render(<TasksWorkspace {...props} params={params} />);
+    expect(screen.getByRole("link", { name: /April 5, 2026, tasks due/ })).toHaveAttribute("aria-current", "date");
+    expect(screen.getByRole("link", { name: /April 6, 2026/ })).toHaveAttribute("href", "/app/tasks?q=proposal&type=email&priority=high&sort=title&date=2026-04-06&calendarMonth=2026-04");
+    expect(screen.getByRole("link", { name: "Previous month" })).toHaveAttribute("href", "/app/tasks?q=proposal&type=email&priority=high&sort=title&calendarMonth=2026-03");
+
+    rerender(<TasksWorkspace {...props} params={{ ...params, date: "2026-04-06", calendarMonth: "2026-04" }} railDate="2026-04-06" />);
+    expect(screen.getByRole("heading", { name: "Tasks · April 6, 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Clear day filter" })).toHaveAttribute("href", "/app/tasks?q=proposal&type=email&priority=high&sort=title&calendarMonth=2026-04");
+  });
+
+  it("renders explicit empty states when there are no day tasks or persisted summary records", () => {
+    render(<TasksWorkspace {...props} railTasks={[]} railTaskCount={0} completion={{ open: 0, completed: 0, cancelled: 0 }} />);
+    expect(screen.getByText("No tasks due today.")).toBeInTheDocument();
+    expect(screen.getByText("No task records yet.")).toBeInTheDocument();
   });
 
   it("renders persisted task fields, valid relation link, filters, and quick-completion action", () => {
