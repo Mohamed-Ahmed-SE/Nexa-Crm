@@ -3,8 +3,8 @@
 import { useActionState, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, CalendarClock, Check, Mail, Phone, Plus, X } from "lucide-react";
-import { addContactNoteAction, archiveContactAction, completeContactTaskAction, createContactAction, createContactTaskAction, logContactActivityAction, updateContactAction, uploadContactFileAction, type ContactActionState } from "./actions";
+import { Archive, CalendarClock, Check, Mail, Phone, Pin, Plus, X } from "lucide-react";
+import { addContactNoteAction, archiveContactAction, completeContactTaskAction, createContactAction, createContactTaskAction, logContactActivityAction, toggleContactNotePinnedAction, updateContactAction, uploadContactFileAction, type ContactActionState } from "./actions";
 import { type ContactActivity, type ContactAttachment, type ContactCompany, type ContactDeal, type ContactListRow, type ContactNote, type ContactOwner, type ContactRow, type ContactTask } from "@/lib/contacts/repository";
 import { contactPageSize, contactViewColumns, contactViewSorts, lifecycleLabels, type ContactViewColumn, type ContactViewSort } from "@/lib/contacts/schema";
 import type { ContactSavedView } from "@/lib/contacts/repository";
@@ -221,9 +221,9 @@ function pageHref(page: number, query: string, lifecycle: string, company: strin
   const params = new URLSearchParams(); if (query) params.set("q", query); if (lifecycle !== "all") params.set("lifecycle", lifecycle); if (company) params.set("company", company); if (owner) params.set("owner", owner); if (sort !== "updated_desc") params.set("sort", sort); if (viewId) params.set("view", viewId); params.set("page", String(page)); return `/app/contacts?${params.toString()}`;
 }
 
-export function ContactDetailWorkspace({ contact, company, deals, activities, activityCount, activityPage, tasks, notes, attachments, owners, companies, canEdit, canReassign, view }: {
+export function ContactDetailWorkspace({ contact, company, deals, activities, activityCount, activityPage, tasks, notes, attachments, owners, companies, canEdit, canEditAll, currentUserId, canReassign, view }: {
   contact: ContactRow; company: ContactCompany | null; deals: ContactDeal[]; activities: ContactActivity[]; activityCount: number; activityPage: number; tasks: ContactTask[]; notes: ContactNote[]; attachments: ContactAttachment[];
-  owners: ContactOwner[]; companies: CompanyOption[]; canEdit: boolean; canReassign: boolean; view: string;
+  owners: ContactOwner[]; companies: CompanyOption[]; canEdit: boolean; canEditAll: boolean; currentUserId: string; canReassign: boolean; view: string;
 }) {
   const dateFormat = useDateFormat();
   const [dialog, setDialog] = useState<DialogKind | null>(null);
@@ -240,7 +240,7 @@ export function ContactDetailWorkspace({ contact, company, deals, activities, ac
     {taskMessage && <p aria-live="polite" className="contact-task-message">{taskMessage}</p>}
     <div className="contact-detail-grid"><div className="contact-detail-main">
       {(activeView === "overview" || activeView === "activity") && <section className="contact-section"><SectionHeading title={activeView === "overview" ? "Recent Activity" : "Activity"}>{canEdit && <button className="leads-secondary-button" onClick={() => setDialog("activity")} type="button"><Plus size={14} />Log activity</button>}</SectionHeading><Timeline activities={activeView === "overview" ? activities.slice(0, 5) : activities} dateFormat={dateFormat} />{activeView === "activity" && <ActivityPagination contactId={contact.id} count={activityCount} page={activityPage} />}</section>}
-      {activeView === "overview" && <section className="contact-section"><SectionHeading title="Notes">{canEdit && <button className="leads-secondary-button" onClick={() => setDialog("note")} type="button"><Plus size={14} />Add note</button>}</SectionHeading><Notes notes={notes.slice(0, 3)} dateFormat={dateFormat} /></section>}
+      {activeView === "overview" && <section className="contact-section"><SectionHeading title="Notes">{canEdit && <button className="leads-secondary-button" onClick={() => setDialog("note")} type="button"><Plus size={14} />Add note</button>}</SectionHeading><Notes canEdit={canEdit} canEditAll={canEditAll} contactId={contact.id} currentUserId={currentUserId} notes={notes.slice(0, 3)} dateFormat={dateFormat} router={router} /></section>}
       {(activeView === "overview" || activeView === "deals") && <section className="contact-section"><SectionHeading title={activeView === "overview" ? "Related Deals" : "Deals"} /><Deals deals={deals} dateFormat={dateFormat} /></section>}
       {activeView === "tasks" && <section className="contact-section"><SectionHeading title="Tasks">{canEdit && <button className="leads-secondary-button" onClick={() => setDialog("task")} type="button"><Plus size={14} />Add task</button>}</SectionHeading><Tasks tasks={tasks} canEdit={canEdit} onComplete={completeTask} dateFormat={dateFormat} /></section>}
       {activeView === "files" && <section className="contact-section"><SectionHeading title="Files" />{canEdit && <FileUpload contactId={contact.id} />}{attachments.length ? <FileList files={attachments} dateFormat={dateFormat} /> : <Empty title="No files yet" description="Files attached to this contact will appear here." />}</section>}
@@ -261,7 +261,28 @@ function ActivityPagination({ contactId, count, page }: { contactId: string; cou
   return <nav aria-label="Activity pages" className="contact-activity-pagination"><span>{count ? `${(page - 1) * contactPageSize + 1}–${Math.min(page * contactPageSize, count)} of ${count} activities` : "0 activities"}</span><div><a aria-disabled={page <= 1} className={page <= 1 ? "is-disabled" : ""} href={page <= 1 ? undefined : href(page - 1)}>Previous</a><span>Page {page} of {pageCount}</span><a aria-disabled={page >= pageCount} className={page >= pageCount ? "is-disabled" : ""} href={page >= pageCount ? undefined : href(page + 1)}>Next</a></div></nav>;
 }
 function Timeline({ activities, dateFormat }: { activities: ContactActivity[]; dateFormat: DateFormat }) { return activities.length ? <ol className="contact-timeline">{activities.map((activity) => <li key={activity.id}><span className="contact-timeline-marker" aria-hidden="true" /><div><div className="contact-activity-title"><strong>{activity.subject || "Activity"}</strong><time dateTime={activity.occurred_at}>{formatContactDateTime(activity.occurred_at, dateFormat)}</time></div><span className="contact-activity-type">{activity.activity_type.replaceAll("_", " ")}</span>{activity.body && <p>{activity.body}</p>}</div></li>)}</ol> : <Empty title="No activity yet" description="Log a call, email, meeting, or note to start this contact’s history." />; }
-function Notes({ notes, dateFormat }: { notes: ContactNote[]; dateFormat: DateFormat }) { return notes.length ? <div className="contact-notes">{notes.map((note) => <article key={note.id}><p>{note.body}</p><time dateTime={note.created_at}>{formatCalendarDateTime(note.created_at, dateFormat)}</time></article>)}</div> : <Empty title="No notes yet" description="Add a note to keep useful context with this contact." />; }
+function Notes({ notes, dateFormat, canEdit, canEditAll, currentUserId, contactId, router }: {
+  notes: ContactNote[]; dateFormat: DateFormat; canEdit: boolean; canEditAll: boolean; currentUserId: string; contactId: string; router: ReturnType<typeof useRouter>;
+}) {
+  return notes.length ? <div className="contact-notes">{notes.map((note) => <article key={note.id}>
+    <p>{note.body}</p><div><time dateTime={note.created_at}>{formatCalendarDateTime(note.created_at, dateFormat)}</time>
+      {note.is_pinned && <span aria-label="Pinned" className="contact-note-pinned"><Pin aria-hidden="true" size={12} />Pinned</span>}
+      {canEdit && (canEditAll || note.created_by === currentUserId) && <NotePinControl contactId={contactId} note={note} router={router} />}
+    </div>
+  </article>)}</div> : <Empty title="No notes yet" description="Add a note to keep useful context with this contact." />;
+}
+
+function NotePinControl({ contactId, note, router }: { contactId: string; note: ContactNote; router: ReturnType<typeof useRouter> }) {
+  const [state, formAction, pending] = useActionState(toggleContactNotePinnedAction, blank);
+  useEffect(() => { if (state.ok) router.refresh(); }, [state.ok, router]);
+  return <form action={formAction}>
+    <input name="contactId" type="hidden" value={contactId} /><input name="noteId" type="hidden" value={note.id} />
+    <button aria-label={`${note.is_pinned ? "Unpin" : "Pin"} note`} className="leads-secondary-button" disabled={pending} type="submit">
+      <Pin aria-hidden="true" size={12} />{pending ? "Saving…" : note.is_pinned ? "Unpin" : "Pin"}
+    </button>
+    {state.message && <p aria-live="polite" className={state.ok ? "contact-success" : "contact-form-error"} role={state.ok ? "status" : "alert"}>{state.message}</p>}
+  </form>;
+}
 function Deals({ deals, dateFormat }: { deals: ContactDeal[]; dateFormat: DateFormat }) { return deals.length ? <div className="contact-deal-table-wrap"><table className="contact-deal-table"><thead><tr><th scope="col">Deal name</th><th scope="col">Stage</th><th scope="col">Value</th><th scope="col">Close date</th><th scope="col">Status</th></tr></thead><tbody>{deals.map((deal) => <tr key={deal.id}><td>{deal.title}</td><td>{deal.stage?.name ?? "—"}</td><td>{new Intl.NumberFormat(undefined, { style: "currency", currency: deal.currency || "USD", maximumFractionDigits: 0 }).format(Number(deal.amount))}</td><td>{deal.expected_close_date ? formatCalendarDate(deal.expected_close_date, dateFormat) : "—"}</td><td><span className={`contact-deal-status status-${deal.status}`}>{deal.status}</span></td></tr>)}</tbody></table></div> : <Empty title="No related deals" description="Deals linked to this contact will appear here." />; }
 function Tasks({ tasks, canEdit, onComplete, dateFormat }: { tasks: ContactTask[]; canEdit: boolean; onComplete: (id: string) => void; dateFormat: DateFormat }) { return tasks.length ? <ul className="contact-task-list">{tasks.map((task) => <li key={task.id}><div><strong>{task.title}</strong><span>{task.description || task.task_type.replaceAll("_", " ")} · {formatContactDateTime(task.due_at, dateFormat)}</span></div><span className={`contact-deal-status status-${task.status}`}>{task.status}</span>{canEdit && task.status === "open" && <button aria-label={`Complete ${task.title}`} className="leads-secondary-button" onClick={() => onComplete(task.id)} type="button"><Check size={14} />Complete</button>}</li>)}</ul> : <Empty title="No tasks yet" description="Create a follow-up task to keep the next step visible." />; }
 function FileList({ files, dateFormat }: { files: ContactAttachment[]; dateFormat: DateFormat }) { return <ul className="contact-file-list">{files.map((file) => <li key={file.id}><div><strong>{file.filename}</strong><span>{file.mime_type} · {(file.size_bytes / 1024).toFixed(0)} KB · {formatCalendarDate(file.created_at, dateFormat)}</span></div><a className="leads-secondary-button" href={`/app/contacts/files/${file.id}`}>Download</a></li>)}</ul>; }

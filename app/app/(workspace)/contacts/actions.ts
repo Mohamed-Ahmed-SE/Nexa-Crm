@@ -232,6 +232,27 @@ export async function addContactNoteAction(_previous: ContactActionState, form: 
   return { ok: true, message: "Note added." };
 }
 
+export async function toggleContactNotePinnedAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
+  const contactId = contactIdSchema.safeParse(text(form, "contactId"));
+  const noteId = contactIdSchema.safeParse(text(form, "noteId"));
+  if (!contactId.success || !noteId.success) return { message: "This note could not be identified." };
+  const { context, supabase, contact, error } = await editableContact(contactId.data);
+  if (error || !supabase || !contact) return { message: error ?? "Contact not found." };
+  const { data: note, error: lookupError } = await supabase.from("notes").select("id, is_pinned, created_by")
+    .eq("workspace_id", context.workspaceId).eq("related_entity_type", "contact")
+    .eq("related_entity_id", contactId.data).eq("id", noteId.data).maybeSingle();
+  if (lookupError || !note) return { message: "Note could not be updated. Refresh the contact and try again." };
+  if (!hasWorkspacePermission(context.role, "crm.edit.all") && note.created_by !== context.userId) {
+    return { message: "You can update only your own notes." };
+  }
+  const { data: updatedNote, error: updateError } = await supabase.from("notes").update({ is_pinned: !note.is_pinned })
+    .eq("workspace_id", context.workspaceId).eq("related_entity_type", "contact")
+    .eq("related_entity_id", contactId.data).eq("id", noteId.data).select("id").maybeSingle();
+  if (updateError || !updatedNote) return { message: "Note could not be updated. Refresh the contact and try again." };
+  revalidatePath(`/app/contacts/${contactId.data}`);
+  return { ok: true, message: `Note ${note.is_pinned ? "unpinned" : "pinned"}.` };
+}
+
 export async function createContactTaskAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
   const id = contactIdSchema.safeParse(text(form, "contactId"));
   if (!id.success) return { message: "This contact could not be identified." };

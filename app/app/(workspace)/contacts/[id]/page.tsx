@@ -30,7 +30,9 @@ export default async function ContactDetailPage({ params, searchParams }: {
     activityPage={activityPage}
     attachments={detail.attachments}
     canEdit={hasWorkspacePermission(context.role, "crm.edit.all") || (hasWorkspacePermission(context.role, "crm.edit.own") && detail.contact.owner_id === context.userId)}
+    canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")}
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
+    currentUserId={context.userId}
     companies={options.companies}
     company={detail.company}
     contact={detail.contact}

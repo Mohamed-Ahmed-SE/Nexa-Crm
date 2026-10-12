@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { ContactListRow, ContactSavedView } from "@/lib/contacts/repository";
 import type { ContactViewColumn } from "@/lib/contacts/schema";
-import { ContactsWorkspace } from "./contacts-workspace";
-import { archiveContactAction } from "./actions";
+import { ContactDetailWorkspace, ContactsWorkspace } from "./contacts-workspace";
+import { archiveContactAction, toggleContactNotePinnedAction } from "./actions";
 
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
@@ -17,6 +17,7 @@ vi.mock("./actions", () => ({
   logContactActivityAction: vi.fn(),
   updateContactAction: vi.fn(),
   uploadContactFileAction: vi.fn(),
+  toggleContactNotePinnedAction: vi.fn(),
   saveContactViewAction: vi.fn(),
   deleteContactViewAction: vi.fn(),
 }));
@@ -109,6 +110,55 @@ describe("ContactsWorkspace list context", () => {
     expect(emptyRow.querySelector('[data-label="Last Activity"]')?.textContent).toBe("—");
     expect(emptyRow.querySelector('[data-label="Next Activity"]')?.textContent).toBe("—");
     expect(emptyRow.querySelector('[data-label="Tags"]')?.textContent).toBe("—");
+  });
+});
+
+const ownNote = { id: "note-1", body: "Follow up next week", is_pinned: true, created_by: "user-1", created_at: "2026-04-01T12:00:00.000Z", updated_at: "2026-04-01T12:00:00.000Z" };
+const detailProps = {
+  contact: populatedContact, company: null, deals: [], activities: [], activityCount: 0, activityPage: 1, tasks: [], notes: [ownNote], attachments: [],
+  owners: [], companies: [], canEdit: true, canEditAll: false, currentUserId: "user-1", canReassign: false, view: "overview",
+};
+
+describe("ContactDetailWorkspace note pinning", () => {
+  it("shows pinned state and lets an editor unpin their note with success feedback and refresh", async () => {
+    const user = userEvent.setup();
+    let finishAction!: (response: { ok: boolean; message: string }) => void;
+    vi.mocked(toggleContactNotePinnedAction).mockReturnValueOnce(new Promise((resolve) => { finishAction = resolve; }));
+    routerMocks.refresh.mockClear();
+    render(<ContactDetailWorkspace {...detailProps} />);
+
+    expect(screen.getByLabelText("Pinned")).toHaveTextContent("Pinned");
+    const pinButton = screen.getByRole("button", { name: "Unpin note" });
+    await user.click(pinButton);
+    expect(screen.getByRole("button", { name: "Unpin note" })).toBeDisabled();
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+    finishAction({ ok: true, message: "Note unpinned." });
+    expect(await screen.findByRole("status")).toHaveTextContent("Note unpinned.");
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(toggleContactNotePinnedAction).mock.calls[0]?.[1].get("contactId")).toBe(populatedContact.id);
+    expect(vi.mocked(toggleContactNotePinnedAction).mock.calls[0]?.[1].get("noteId")).toBe(ownNote.id);
+  });
+
+  it("hides pin controls for another creator’s note when the editor lacks crm.edit.all", () => {
+    const otherNote = { ...ownNote, created_by: "user-2", is_pinned: false };
+    render(<ContactDetailWorkspace {...detailProps} notes={[otherNote]} />);
+
+    expect(screen.queryByRole("button", { name: "Pin note" })).not.toBeInTheDocument();
+  });
+
+  it("hides pin controls for a read-only user", () => {
+    render(<ContactDetailWorkspace {...detailProps} canEdit={false} />);
+
+    expect(screen.queryByRole("button", { name: "Unpin note" })).not.toBeInTheDocument();
+  });
+
+  it("announces the server action error when unpinning a note fails", async () => {
+    const user = userEvent.setup();
+    vi.mocked(toggleContactNotePinnedAction).mockResolvedValueOnce({ message: "You can update only your own notes." });
+    render(<ContactDetailWorkspace {...detailProps} canEditAll />);
+
+    await user.click(screen.getByRole("button", { name: "Unpin note" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("You can update only your own notes.");
   });
 });
 
