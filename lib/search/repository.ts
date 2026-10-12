@@ -9,20 +9,20 @@ const resultLimit = 5;
 export async function searchWorkspaceRecords(supabase: Supabase, workspaceId: string, query: string): Promise<GlobalSearchResults> {
   const rows = await fetchWorkspaceSearchRows(supabase, workspaceId, globalSearchFilters(query));
   return {
-    lead: rows.leads.map((lead) => mapLead(lead, query)),
+    lead: rows.leads.map(mapLead),
     contact: rows.contacts.map(mapContact),
     company: rows.companies.map(mapCompany),
     deal: rows.deals.map(mapDeal),
   };
 }
 
-function mapLead(lead: Awaited<ReturnType<typeof fetchWorkspaceSearchRows>>["leads"][number], query: string): GlobalSearchItem {
+function mapLead(lead: Awaited<ReturnType<typeof fetchWorkspaceSearchRows>>["leads"][number]): GlobalSearchItem {
   return {
     id: lead.id,
     name: lead.full_name,
     type: "lead",
     context: [lead.job_title, lead.company_name, lead.email].filter(Boolean).join(" · ") || "Lead",
-    href: `/app/leads?q=${encodeURIComponent(query)}`,
+    href: `/app/leads/${lead.id}`,
   };
 }
 

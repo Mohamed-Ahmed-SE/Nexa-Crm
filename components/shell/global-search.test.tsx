@@ -9,7 +9,7 @@ vi.mock("@/lib/search/actions", () => ({ globalSearchAction }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
 
 const populatedResults: GlobalSearchResults = {
-  lead: [{ id: "l1", name: "Ada Lovelace", type: "lead", context: "Founder · Analytical Engines", href: "/app/leads?q=Ada" }],
+  lead: [{ id: "l1", name: "Ada Lovelace", type: "lead", context: "Founder · Analytical Engines", href: "/app/leads/l1" }],
   contact: [{ id: "c1", name: "Ada Lovelace", type: "contact", context: "Founder · Analytical Engines", href: "/app/contacts/c1" }],
   company: [{ id: "co1", name: "Analytical Engines", type: "company", context: "Software", href: "/app/companies/co1" }],
   deal: [{ id: "d1", name: "Engine contract", type: "deal", context: "Analytical Engines · Ada Lovelace · open", href: "/app/deals/d1" }],
@@ -32,7 +32,7 @@ describe("GlobalSearch", () => {
     await userEvent.type(input, "Ada");
     const dialog = screen.getByRole("dialog");
     const matchingResults = await within(dialog).findAllByRole("link", { name: /Ada Lovelace.*Founder/ });
-    expect(matchingResults[0]).toHaveAttribute("href", "/app/leads?q=Ada");
+    expect(matchingResults[0]).toHaveAttribute("href", "/app/leads/l1");
     expect(within(dialog).getByRole("region", { name: "Leads" })).toBeInTheDocument();
     expect(within(dialog).getByRole("region", { name: "Contacts" })).toBeInTheDocument();
     expect(within(dialog).getByRole("region", { name: "Companies" })).toBeInTheDocument();
@@ -58,7 +58,7 @@ describe("GlobalSearch", () => {
     fireEvent.change(input, { target: { value: "new" } });
     expect((await screen.findAllByRole("link", { name: /Ada Lovelace.*Founder/ })).length).toBeGreaterThan(0);
     await act(async () => {
-      resolveOlder?.({ ok: true, results: { ...populatedResults, lead: [{ id: "stale", name: "Outdated record", type: "lead", context: "Old result", href: "/app/leads?q=old" }] } });
+      resolveOlder?.({ ok: true, results: { ...populatedResults, lead: [{ id: "stale", name: "Outdated record", type: "lead", context: "Old result", href: "/app/leads/stale" }] } });
     });
     expect(screen.getAllByRole("link", { name: /Ada Lovelace.*Founder/ })).toHaveLength(2);
     expect(screen.queryByRole("link", { name: /Outdated record/ })).not.toBeInTheDocument();

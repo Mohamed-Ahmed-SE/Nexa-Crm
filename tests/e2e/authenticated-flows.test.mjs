@@ -153,6 +153,16 @@ test("manager completes authenticated CRM journeys with persisted local outcomes
       const creationActivity = await admin.from("activities").select("id").eq("related_entity_type", "lead").eq("related_entity_id", lead.id).eq("activity_type", "record_created").maybeSingle();
       assert.ok(creationActivity.data, "lead creation should persist its audit activity");
 
+      await page.getByRole("button", { name: "Search CRM" }).click();
+      await page.getByRole("searchbox", { name: "Search this workspace" }).fill(data.leadName);
+      const globalLeadResult = page.getByRole("region", { name: "Leads" }).getByRole("link", { name: new RegExp(data.leadName) });
+      await globalLeadResult.waitFor();
+      await globalLeadResult.click();
+      await page.waitForURL(`${origin}/app/leads/${lead.id}`);
+      await page.getByRole("heading", { name: data.leadName, exact: true }).waitFor();
+      await page.getByRole("region", { name: "Lead information" }).waitFor();
+      await page.goto(`${origin}/app/leads`);
+
       await page.getByPlaceholder("Search leads by name, company, or email").fill(data.leadName);
       await page.getByRole("button", { name: "Apply filters", exact: true }).click();
       await page.getByRole("row").filter({ hasText: data.leadName }).waitFor();
