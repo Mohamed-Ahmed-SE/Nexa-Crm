@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 describe("GlobalSearch", () => {
-  it("opens from Cmd/Ctrl+K, groups results, and closes with focus restored", async () => {
+  it("opens from documented shortcuts, groups results, and restores focus after close", async () => {
     render(<GlobalSearch canCreate={true} />);
     const trigger = screen.getByRole("button", { name: /Search CRM/ });
     trigger.focus();
@@ -41,6 +41,9 @@ describe("GlobalSearch", () => {
     fireEvent.keyDown(input, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.keyDown(window, { key: "/" });
+    expect(screen.getByRole("searchbox", { name: "Search this workspace" })).toHaveFocus();
   });
 
   it("keeps a newer query when an older server response arrives late", async () => {
@@ -85,11 +88,12 @@ describe("GlobalSearch", () => {
     expect(within(actions).getByRole("link", { name: "Add Deal" })).toHaveAttribute("href", "/app/deals?create=1");
   });
 
-  it("does not invoke the shortcut while focus is in an editable control", () => {
+  it("ignores search shortcuts while focus is in an editable control", () => {
     render(<><input aria-label="Other form field" /><GlobalSearch canCreate={false} /></>);
     const field = screen.getByRole("textbox", { name: "Other form field" });
     field.focus();
     fireEvent.keyDown(field, { key: "k", metaKey: true });
+    fireEvent.keyDown(field, { key: "/" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

@@ -43,7 +43,8 @@ export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      const isSearchShortcut = event.key === "/" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k");
+      if (!isSearchShortcut) return;
       const target = event.target;
       if (target instanceof HTMLElement && (target.isContentEditable || target.closest("input, textarea, select, [role='textbox']"))) return;
       event.preventDefault();
@@ -120,7 +121,7 @@ export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
     <button aria-haspopup="dialog" aria-label="Search CRM" className="global-search global-search-trigger" onClick={show} type="button">
       <Search aria-hidden="true" size={17} />
       <span className="global-search-trigger-label">Search CRM</span>
-      <span aria-hidden="true" className="search-shortcut">⌘ / Ctrl K</span>
+      <span aria-hidden="true" className="search-shortcut">⌘ / Ctrl K · /</span>
     </button>
     {open && <div className="global-search-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
       <section aria-labelledby="global-search-title" aria-modal="true" className="global-search-dialog" onKeyDown={onDialogKeyDown} ref={dialogRef} role="dialog">
