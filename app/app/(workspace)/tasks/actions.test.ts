@@ -10,7 +10,7 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/auth/authorize", () => ({ requirePermission: mocks.requirePermission }));
 vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: mocks.createSupabaseServerClient }));
 
-import { completeTaskAction, createTaskAction, rescheduleTaskAction } from "./actions";
+import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction } from "./actions";
 
 const workspaceId = "5a4302eb-742b-49cb-9f0d-bfc96e9474c3";
 const userId = "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2";
@@ -76,7 +76,7 @@ type Task = {
   due_at?: string | null;
 };
 
-function taskDatabase(task: Task, companyOwnerId: string | null, taskWorkspaceId = workspaceId) {
+function taskDatabase(task: Task, companyOwnerId: string | null, taskWorkspaceId = workspaceId, persistedTaskStatus = task.status) {
   const activities: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
   const from = (table: string) => {
@@ -98,11 +98,9 @@ function taskDatabase(task: Task, companyOwnerId: string | null, taskWorkspaceId
       is: () => query,
       maybeSingle: async () => {
         if (table === "tasks" && operation === "update") {
-          if (
-            task.status !== "open" ||
+          if (persistedTaskStatus !== filters.get("status") ||
             filters.get("workspace_id") !== taskWorkspaceId ||
-            filters.get("id") !== task.id ||
-            filters.get("status") !== "open"
+            filters.get("id") !== task.id
           ) return { data: null, error: null };
           Object.assign(task, update);
           return { data: { id: task.id }, error: null };
@@ -111,7 +109,7 @@ function taskDatabase(task: Task, companyOwnerId: string | null, taskWorkspaceId
           if (filters.get("workspace_id") !== taskWorkspaceId || filters.get("id") !== task.id) return { data: null, error: null };
           return { data: task, error: null };
         }
-        if (table === "companies" && companyOwnerId && filters.get("owner_id") === companyOwnerId) return { data: { id: companyId, owner_id: companyOwnerId }, error: null };
+        if ((table === "companies" || table === "leads") && companyOwnerId && filters.get("owner_id") === companyOwnerId) return { data: { id: companyId, owner_id: companyOwnerId }, error: null };
         return { data: null, error: null };
       },
       insert: async (activity: Record<string, unknown>) => {
@@ -124,6 +122,82 @@ function taskDatabase(task: Task, companyOwnerId: string | null, taskWorkspaceId
 
   return { database: { from }, task, activities, updates };
 }
+
+describe("task cancellation lifecycle actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requirePermission.mockResolvedValue({ workspaceId, userId, role: "member" });
+  });
+
+  it.each([
+    { label: "cancel", action: cancelTaskAction, prior: "open", next: "cancelled", message: "Task cancelled." },
+    { label: "reopen", action: reopenTaskAction, prior: "cancelled", next: "open", message: "Task reopened." },
+  ] as const)("$label updates only the expected assigned-task status", async ({ action, prior, next, message }) => {
+    const state = taskDatabase({ id: taskId, title: "Call about renewal", status: prior, assigned_to: userId, related_entity_type: "company", related_entity_id: companyId, completed_at: "2026-04-02T10:00:00.000Z" }, otherUserId);
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await action(taskId);
+
+    expect(result).toEqual({ ok: true, message });
+    expect(state.task).toMatchObject({ status: next, completed_at: null });
+    expect(state.updates).toEqual([{ status: next, completed_at: null }]);
+    expect(mocks.revalidatePath.mock.calls.map(([path]) => path)).toEqual(["/app/tasks", `/app/companies/${companyId}`]);
+  });
+
+  it("allows an owner of a linked lead and revalidates the lead detail", async () => {
+    const state = taskDatabase({ id: taskId, title: "Call about renewal", status: "open", assigned_to: otherUserId, related_entity_type: "lead", related_entity_id: companyId, completed_at: null }, userId);
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    expect(await cancelTaskAction(taskId)).toEqual({ ok: true, message: "Task cancelled." });
+    expect(mocks.revalidatePath.mock.calls.map(([path]) => path)).toEqual(["/app/tasks", `/app/leads/${companyId}`]);
+  });
+
+  it("denies an unrelated task to a member", async () => {
+    const state = taskDatabase({ id: taskId, title: "Call about renewal", status: "open", assigned_to: otherUserId, related_entity_type: null, related_entity_id: null, completed_at: null }, null);
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    expect(await cancelTaskAction(taskId)).toEqual({ message: "You can cancel only tasks assigned to you or linked to a record you own." });
+    expect(state.updates).toEqual([]);
+  });
+
+  it("lets a crm.edit.all manager change another member's task", async () => {
+    mocks.requirePermission.mockResolvedValue({ workspaceId, userId, role: "manager" });
+    const state = taskDatabase({ id: taskId, title: "Call about renewal", status: "open", assigned_to: otherUserId, related_entity_type: null, related_entity_id: null, completed_at: null }, null);
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    expect(await cancelTaskAction(taskId)).toEqual({ ok: true, message: "Task cancelled." });
+    expect(state.task.status).toBe("cancelled");
+  });
+
+  it("does not mutate a task after its status has changed", async () => {
+    const state = taskDatabase({ id: taskId, title: "Call about renewal", status: "completed", assigned_to: userId, related_entity_type: null, related_entity_id: null, completed_at: "2026-04-02T10:00:00.000Z" }, userId);
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await cancelTaskAction(taskId);
+
+    expect(result).toEqual({ message: "This open task could not be found in your workspace." });
+    expect(state.updates).toEqual([]);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("reports a stale conditional update instead of claiming success", async () => {
+    const state = taskDatabase({ id: taskId, title: "Call about renewal", status: "cancelled", assigned_to: userId, related_entity_type: null, related_entity_id: null, completed_at: null }, userId, workspaceId, "open");
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await reopenTaskAction(taskId);
+
+    expect(result).toEqual({ message: "Task could not be reopened. Refresh and try again." });
+    expect(state.task.status).toBe("cancelled");
+    expect(state.updates).toEqual([{ status: "open", completed_at: null }]);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed IDs before authorization or database access", async () => {
+    expect(await cancelTaskAction("not-a-uuid")).toEqual({ message: "This task could not be identified." });
+    expect(mocks.requirePermission).not.toHaveBeenCalled();
+    expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
+  });
+});
 
 describe("complete task action", () => {
   beforeEach(() => {

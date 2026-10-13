@@ -80,6 +80,29 @@ describe("workspace task date filtering", () => {
     expect(calls).not.toContainEqual(["gte", "due_at", "2026-03-08T05:00:00.000Z"]);
   });
 
+  it("shows cancelled tasks only to their assignees unless workspace reassignment is permitted", async () => {
+    const memberQuery = createTaskQueryRecorder();
+    const params = parseTaskSearchParams({ view: "cancelled" });
+
+    await listWorkspaceTasks(memberQuery.supabase as never, { workspaceId: "workspace-1", userId: "member-1", params, canReassign: false });
+    expect(memberQuery.calls).toContainEqual(["eq", "assigned_to", "member-1"]);
+    expect(memberQuery.calls).toContainEqual(["eq", "status", "cancelled"]);
+
+    const managerQuery = createTaskQueryRecorder();
+    await listWorkspaceTasks(managerQuery.supabase as never, { workspaceId: "workspace-1", userId: "manager-1", params, canReassign: true });
+    expect(managerQuery.calls).not.toContainEqual(["eq", "assigned_to", "manager-1"]);
+    expect(managerQuery.calls).toContainEqual(["eq", "status", "cancelled"]);
+  });
+
+  it("filters cancelled tasks in the calendar within the same assignee scope", async () => {
+    const { supabase, calls } = createTaskQueryRecorder();
+    await listTaskCalendarRecords(supabase as never, { workspaceId: "workspace-1", userId: "member-1", canReassign: false, params: parseTaskSearchParams({ view: "cancelled" }), calendarMonth: "2026-03" });
+
+    expect(calls).toContainEqual(["eq", "workspace_id", "workspace-1"]);
+    expect(calls).toContainEqual(["eq", "assigned_to", "member-1"]);
+    expect(calls).toContainEqual(["eq", "status", "cancelled"]);
+  });
+
   it("does not limit the permitted all-workspace view to the current assignee", async () => {
     const { supabase, calls } = createTaskQueryRecorder();
     const params = parseTaskSearchParams({ view: "all", date: "2026-03-08", timeZone: "America/New_York" });

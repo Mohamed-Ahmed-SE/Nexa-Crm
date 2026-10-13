@@ -61,6 +61,34 @@ export async function rescheduleTaskAction(taskId: string, form: FormData): Prom
   return { ok: true, message: "Task rescheduled." };
 }
 
+export async function cancelTaskAction(taskId: string): Promise<TaskActionState> {
+  return transitionTaskStatus(taskId, { expectedStatus: "open", nextStatus: "cancelled", action: "cancel", resultWord: "cancelled" });
+}
+
+export async function reopenTaskAction(taskId: string): Promise<TaskActionState> {
+  return transitionTaskStatus(taskId, { expectedStatus: "cancelled", nextStatus: "open", action: "reopen", resultWord: "reopened" });
+}
+
+async function transitionTaskStatus(taskId: string, transition: { expectedStatus: "open" | "cancelled"; nextStatus: "cancelled" | "open"; action: "cancel" | "reopen"; resultWord: "cancelled" | "reopened" }): Promise<TaskActionState> {
+  const { expectedStatus, nextStatus, action, resultWord } = transition;
+  const id = taskIdSchema.safeParse(taskId);
+  if (!id.success) return { message: "This task could not be identified." };
+  const context = await requirePermission("crm.edit.own");
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return { message: "Authentication is not configured." };
+  const { data: task, error: taskError } = await supabase.from("tasks").select("id,status,assigned_to,related_entity_type,related_entity_id").eq("workspace_id", context.workspaceId).eq("id", id.data).maybeSingle();
+  if (taskError || !task || task.status !== expectedStatus) return { message: `This ${expectedStatus} task could not be found in your workspace.` };
+  const canEditAll = hasWorkspacePermission(context.role, "crm.edit.all");
+  const ownsRelated = task.related_entity_type && task.related_entity_id ? await isRelationOwnedBy(supabase, context.workspaceId, context.userId, task.related_entity_type, task.related_entity_id) : false;
+  if (!canEditAll && task.assigned_to !== context.userId && !ownsRelated) return { message: `You can ${action} only tasks assigned to you or linked to a record you own.` };
+
+  const { data: updated, error: updateError } = await supabase.from("tasks").update({ status: nextStatus, completed_at: null }).eq("workspace_id", context.workspaceId).eq("id", id.data).eq("status", expectedStatus).select("id").maybeSingle();
+  if (updateError || !updated) return { message: `Task could not be ${resultWord}. Refresh and try again.` };
+  revalidatePath("/app/tasks");
+  if (task.related_entity_type && task.related_entity_id) revalidatePath(relationPath(task.related_entity_type, task.related_entity_id));
+  return { ok: true, message: `Task ${resultWord}.` };
+}
+
 export async function completeTaskAction(taskId: string): Promise<TaskActionState> {
   const id = taskIdSchema.safeParse(taskId);
   if (!id.success) return { message: "This task could not be identified." };
@@ -120,5 +148,6 @@ function relationPath(type: string, id: string) {
   if (type === "company") return `/app/companies/${id}`;
   if (type === "contact") return `/app/contacts/${id}`;
   if (type === "deal") return `/app/deals/${id}`;
+  if (type === "lead") return `/app/leads/${id}`;
   return `/app/leads`;
 }

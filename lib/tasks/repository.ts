@@ -49,6 +49,7 @@ export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, user
     case "upcoming": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()); break;
     case "overdue": query = query.eq("status", "open").lt("due_at", start.toISOString()); break;
     case "completed": query = query.eq("status", "completed"); break;
+    case "cancelled": query = query.eq("status", "cancelled"); break;
     case "all": query = query.eq("status", "open"); break;
   }
   if (params.date) {
@@ -95,6 +96,7 @@ export async function listTaskCalendarRecords(supabase: Supabase, { workspaceId,
     case "upcoming": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()); break;
     case "overdue": query = query.eq("status", "open").lt("due_at", today.toISOString()); break;
     case "completed": query = query.eq("status", "completed"); break;
+    case "cancelled": query = query.eq("status", "cancelled"); break;
     case "all": query = query.eq("status", "open"); break;
   }
   if (params.priority !== "all") query = query.eq("priority", params.priority);

@@ -9,6 +9,7 @@ import { waitForResponse, withNextServer } from "./next-server.mjs";
 
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1"]);
 const manager = { id: "00000000-0000-4000-8000-000000000102", email: "maya.hassan@northstar-demo.example" };
+const member = { id: "00000000-0000-4000-8000-000000000103", email: "omar.nabil@northstar-demo.example" };
 const viewer = { id: "00000000-0000-4000-8000-000000000105", email: "sam.reed@northstar-demo.example" };
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const timeoutMs = 180_000;
@@ -46,7 +47,7 @@ function createSupabase(apiUrl, key) {
 }
 
 async function provisionUsers(admin, password) {
-  for (const { id } of [manager, viewer]) {
+  for (const { id } of [manager, member, viewer]) {
     const { error } = await admin.auth.admin.updateUserById(id, { password, email_confirm: true });
     if (error) throw new Error("Could not provision seeded users through the local Auth admin API.");
   }
@@ -207,10 +208,33 @@ test("manager completes authenticated CRM journeys with persisted local outcomes
       await page.goto(`${origin}/app/tasks`);
       await page.getByRole("button", { name: "Add Task" }).click();
       await page.getByLabel("Task title").fill(data.taskTitle);
+      await page.getByLabel("Assign to").selectOption(member.id);
       await page.getByRole("button", { name: "Create task" }).click();
-      await page.getByText(data.taskTitle).waitFor();
+      await page.goto(`${origin}/app/tasks?view=all`);
+      await page.getByRole("row").filter({ hasText: data.taskTitle }).waitFor();
       const task = await rowBy(admin, "tasks", "title", data.taskTitle);
       assert.equal(task.status, "open");
+      assert.equal(task.assigned_to, member.id);
+      await page.getByRole("button", { name: `Cancel ${data.taskTitle}` }).click();
+      await page.getByRole("status").filter({ hasText: "Task cancelled." }).waitFor();
+      const cancelledTask = await rowBy(admin, "tasks", "title", data.taskTitle);
+      assert.equal(cancelledTask.status, "cancelled");
+      assert.equal(cancelledTask.completed_at, null);
+      await page.goto(`${origin}/app/tasks?view=cancelled`);
+      await page.getByRole("row").filter({ hasText: data.taskTitle }).waitFor();
+
+      const assigneeContext = await browser.newContext();
+      const assigneePage = await assigneeContext.newPage();
+      await login(assigneePage, origin, member.email, ephemeralPassword);
+      await assigneePage.goto(`${origin}/app/tasks`);
+      await assigneePage.getByRole("link", { name: "Cancelled Tasks" }).click();
+      await assigneePage.getByRole("row").filter({ hasText: data.taskTitle }).waitFor();
+      await assigneePage.getByRole("button", { name: `Reopen ${data.taskTitle}` }).click();
+      await assigneePage.getByRole("status").filter({ hasText: "Task reopened." }).waitFor();
+      const reopenedTask = await rowBy(admin, "tasks", "title", data.taskTitle);
+      assert.equal(reopenedTask.status, "open");
+      assert.equal(reopenedTask.completed_at, null);
+      await assigneeContext.close();
 
       // Convert the lead into a contact, company, and deal, then move and win the deal.
       await page.goto(`${origin}/app/leads?q=${encodeURIComponent(data.leadName)}`);

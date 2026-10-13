@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import styles from "./tasks-workspace.module.css";
-import { completeTaskAction, createTaskAction, rescheduleTaskAction, type TaskActionState } from "./actions";
+import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction, type TaskActionState } from "./actions";
 import { taskPageSize, taskTypes, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { TaskOption, TaskOwner, TaskOverviewCounts, TaskRow } from "@/lib/tasks/repository";
 import { useDateFormat } from "@/components/auth/date-format-provider";
 import { formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
 
 const blankState: TaskActionState = {};
-const viewLabels = { my: "My Tasks", today: "Today", upcoming: "Upcoming", overdue: "Overdue", completed: "Completed", all: "All Tasks" } as const;
+const viewLabels = { my: "My Tasks", today: "Today", upcoming: "Upcoming", overdue: "Overdue", completed: "Completed", cancelled: "Cancelled Tasks", all: "All Tasks" } as const;
 const typeLabels: Record<string, string> = { call: "Call", email: "Email", meeting: "Meeting", follow_up: "Follow-up", to_do: "To-do" };
 const priorityLabels = { low: "Low", medium: "Medium", high: "High" } as const;
 const relationLabels = { company: "Company", contact: "Contact", lead: "Lead", deal: "Deal" } as const;
@@ -72,6 +72,24 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
       if (result.ok) router.refresh();
     });
   }
+  function changeTaskStatus(id: string, action: "cancel" | "reopen") {
+    setPendingId(id); setNotice(""); setNoticeIsError(false);
+    startTransition(async () => {
+      let result: TaskActionState;
+      try {
+        result = action === "cancel" ? await cancelTaskAction(id) : await reopenTaskAction(id);
+      } catch {
+        setNotice(`Task could not be ${action === "cancel" ? "cancelled" : "reopened"}. Please try again.`);
+        setNoticeIsError(true);
+        setPendingId(null);
+        return;
+      }
+      setPendingId(null);
+      setNotice(result.message ?? `Task could not be ${action === "cancel" ? "cancelled" : "reopened"}.`);
+      setNoticeIsError(!result.ok);
+      if (result.ok) router.refresh();
+    });
+  }
   const [, startTransition] = useTransition();
 
   return <main className="page-container tasks-page">
@@ -99,7 +117,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
           {visibleColumns.Assignee && <td data-label="Assignee">{task.assigned_to ? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>}
           {visibleColumns.Priority && <td data-label="Priority"><span className={`tasks-priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span></td>}
           {visibleColumns.Status && <td data-label="Status"><span className={`tasks-status status-${task.status}`}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span></td>}
-          <td data-label="Actions">{canEdit && task.status === "open" && <div className="tasks-row-actions"><button aria-label={task.due_at ? `Reschedule ${task.title}` : `Set due date for ${task.title}`} className="tasks-secondary-button" onClick={() => setReschedulingTask(task)} type="button">{task.due_at ? "Reschedule" : "Set due date"}</button><button aria-label={`Complete ${task.title}`} className="tasks-complete-button" disabled={pendingId === task.id} onClick={() => complete(task.id)} type="button"><Check aria-hidden="true" size={14} />{pendingId === task.id ? "Completing…" : "Complete"}</button></div>}</td>
+          <td data-label="Actions">{canEdit && task.status === "open" && <div className="tasks-row-actions"><button aria-label={task.due_at ? `Reschedule ${task.title}` : `Set due date for ${task.title}`} className="tasks-secondary-button" onClick={() => setReschedulingTask(task)} type="button">{task.due_at ? "Reschedule" : "Set due date"}</button><button aria-label={`Complete ${task.title}`} className="tasks-complete-button" disabled={pendingId === task.id} onClick={() => complete(task.id)} type="button"><Check aria-hidden="true" size={14} />{pendingId === task.id ? "Completing…" : "Complete"}</button><button aria-label={`Cancel ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "cancel")} type="button">{pendingId === task.id ? "Cancelling…" : "Cancel"}</button></div>}{canEdit && task.status === "cancelled" && <div className="tasks-row-actions"><button aria-label={`Reopen ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "reopen")} type="button">{pendingId === task.id ? "Reopening…" : "Reopen"}</button></div>}</td>
         </tr>)}</tbody></table></div>
       {tasks.length === 0 && <div className="tasks-empty"><CalendarDays aria-hidden="true" size={22} /><h2>{hasFilters(params) ? "No matching tasks" : params.view === "completed" ? "No completed tasks yet" : "No tasks to show"}</h2><p>{hasFilters(params) ? "Try changing or clearing your search and filters." : params.view === "my" ? "Tasks assigned to you will appear here." : params.view === "all" ? "Open tasks in this workspace will appear here." : `Tasks in ${viewLabels[params.view].toLowerCase()} will appear here.`}</p>{canCreate && !hasFilters(params) && params.view === "my" && <button className="tasks-secondary-button" onClick={() => setFormOpen(true)} type="button">Create your first task</button>}</div>}
       <nav aria-label="Task pages" className="tasks-pagination"><span>{matchedCount === 0 ? "0 tasks" : `${(params.page - 1) * taskPageSize + 1}–${Math.min(params.page * taskPageSize, matchedCount)} of ${matchedCount} tasks`}</span><div>{params.page <= 1 ? <span aria-disabled="true" className="is-disabled">Previous</span> : <Link href={tasksHref({ ...params, page: params.page - 1 })}>Previous</Link>}<span>Page {params.page} of {pageCount}</span>{params.page >= pageCount ? <span aria-disabled="true" className="is-disabled">Next</span> : <Link href={tasksHref({ ...params, page: params.page + 1 })}>Next</Link>}</div></nav>

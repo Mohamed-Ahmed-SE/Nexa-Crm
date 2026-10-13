@@ -1,14 +1,15 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { completeTaskAction, createTaskAction, rescheduleTaskAction } from "./actions";
+import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction } from "./actions";
 import { TasksWorkspace } from "./tasks-workspace";
 import TasksError from "./error";
 import type { TaskRow } from "@/lib/tasks/repository";
 import type { TaskSearchParams } from "@/lib/tasks/schema";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), replace: vi.fn() }) }));
-vi.mock("./actions", () => ({ completeTaskAction: vi.fn(), createTaskAction: vi.fn(), rescheduleTaskAction: vi.fn() }));
+const routerRefresh = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: routerRefresh, replace: vi.fn() }) }));
+vi.mock("./actions", () => ({ cancelTaskAction: vi.fn(), completeTaskAction: vi.fn(), createTaskAction: vi.fn(), reopenTaskAction: vi.fn(), rescheduleTaskAction: vi.fn() }));
 
 const task: TaskRow = {
   id: "c2155412-d8a0-4792-b2bc-f6064b2798f4", title: "Send revised proposal", description: "Include the support scope.", task_type: "email",
@@ -95,6 +96,51 @@ describe("TasksWorkspace", () => {
       expect(row.querySelector(`[data-label="${column}"]`)).toBeInTheDocument();
     }
     expectTaskTableColumnsAligned();
+  });
+
+  it("lets permitted editors cancel an open task and announces a successful refresh", async () => {
+    vi.clearAllMocks();
+    vi.mocked(cancelTaskAction).mockResolvedValueOnce({ ok: true, message: "Task cancelled." });
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+
+    await user.click(screen.getByRole("button", { name: "Cancel Send revised proposal" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Task cancelled.");
+    expect(cancelTaskAction).toHaveBeenCalledWith(task.id);
+    expect(routerRefresh).toHaveBeenCalled();
+  });
+
+  it("announces cancellation failures and restores the control", async () => {
+    vi.clearAllMocks();
+    vi.mocked(cancelTaskAction).mockRejectedValueOnce(new Error("Request failed"));
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+    const cancelButton = screen.getByRole("button", { name: "Cancel Send revised proposal" });
+
+    await user.click(cancelButton);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Task could not be cancelled. Please try again.");
+    await waitFor(() => expect(cancelButton).toBeEnabled());
+  });
+
+  it("offers reopen only for cancelled tasks and hides lifecycle controls from viewers and completed tasks", async () => {
+    vi.clearAllMocks();
+    vi.mocked(reopenTaskAction).mockResolvedValueOnce({ ok: true, message: "Task reopened." });
+    const user = userEvent.setup();
+    const cancelledTask = { ...task, status: "cancelled" as const };
+    const { rerender } = render(<TasksWorkspace {...props} params={{ ...props.params, view: "cancelled" }} tasks={[cancelledTask]} />);
+
+    expect(screen.getByRole("link", { name: "Cancelled Tasks" })).toHaveAttribute("aria-current", "page");
+    await user.click(screen.getByRole("button", { name: "Reopen Send revised proposal" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Task reopened.");
+    expect(reopenTaskAction).toHaveBeenCalledWith(task.id);
+    expect(routerRefresh).toHaveBeenCalled();
+
+    rerender(<TasksWorkspace {...props} canEdit={false} tasks={[task]} />);
+    expect(screen.queryByRole("button", { name: "Cancel Send revised proposal" })).not.toBeInTheDocument();
+    rerender(<TasksWorkspace {...props} tasks={[{ ...task, status: "completed" }]} />);
+    expect(screen.queryByRole("button", { name: /Cancel|Reopen/ })).not.toBeInTheDocument();
   });
 
   it("hides and restores an optional column without hiding task title or actions", async () => {

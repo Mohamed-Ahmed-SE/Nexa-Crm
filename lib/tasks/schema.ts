@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 
-export const taskViews = ["my", "today", "upcoming", "overdue", "completed", "all"] as const;
+export const taskViews = ["my", "today", "upcoming", "overdue", "completed", "cancelled", "all"] as const;
 export type TaskView = (typeof taskViews)[number];
 export const taskTypes = ["call", "email", "meeting", "follow_up", "to_do"] as const;
 export const taskPriorities = ["low", "medium", "high"] as const;

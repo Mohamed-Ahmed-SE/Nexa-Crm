@@ -11,6 +11,9 @@ describe("task query parsing", () => {
     expect(restrictAllTasksView(allTasks)).toEqual({ ...allTasks, view: "my" });
     const todayTasks = parseTaskSearchParams({ view: "today" });
     expect(restrictAllTasksView(todayTasks)).toEqual(todayTasks);
+    const cancelledTasks = parseTaskSearchParams({ view: "cancelled" });
+    expect(cancelledTasks.view).toBe("cancelled");
+    expect(restrictAllTasksView(cancelledTasks)).toEqual(cancelledTasks);
   });
   it("falls back safely for invalid and repeated query parameters", () => {
     expect(parseTaskSearchParams({ view: "today", page: "0" })).toEqual({ view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, timeZone: "UTC", page: 1 });
