@@ -178,7 +178,9 @@ Completing a task:
 
 ## Search
 
-`globalSearch(query, limitPerType)`
+`globalSearch(query)`
+
+Return up to five results per entity, ordered by `created_at` descending and then `id` ascending as a tie-breaker.
 
 Return:
 
@@ -191,7 +193,7 @@ Return:
 }
 ```
 
-Minimum input length can be 2 characters.
+Input is trimmed; queries of 1–100 characters are accepted, while empty or longer queries return no results.
 
 ---
 

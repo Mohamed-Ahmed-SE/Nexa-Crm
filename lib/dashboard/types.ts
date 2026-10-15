@@ -19,6 +19,8 @@ export type DashboardDeal = {
 };
 
 export type DashboardStage = { id: string; name: string; pipelineId: string; pipelineName: string; position: number; stageType: "open" | "won" | "lost" };
+export type DashboardLeadAttentionCandidate = { id: string; fullName: string; status: "new" | "contacted" | "qualified" | "unqualified" | "converted"; createdAt: string };
+export type DashboardLeadActivity = { leadId: string; occurredAt: string };
 export type DashboardTask = { id: string; title: string; dueAt: string; priority: string; relatedTo: string | null; relatedId: string | null; relatedHref: string | null };
 export type DashboardActivity = { id: string; subject: string; kind: string; occurredAt: string; relatedTo: string | null; relatedHref: string | null };
 export type DashboardSource = { name: string; count: number };
@@ -26,9 +28,14 @@ export type DashboardSource = { name: string; count: number };
 export type WorkspaceDashboardData = {
   currency: string;
   timeZone: string;
+  monthStart: string;
+  monthEnd: string;
+  now: string;
   deals: DashboardDeal[];
   stages: DashboardStage[];
   leads: Array<{ id: string; createdAt: string; source: string }>;
+  leadAttentionCandidates: DashboardLeadAttentionCandidate[];
+  leadActivities: DashboardLeadActivity[];
   tasks: DashboardTask[];
   activities: DashboardActivity[];
   today: string;
@@ -45,4 +52,5 @@ export type DashboardSummary = {
   dealsBySource: DashboardSource[];
   tasksToday: DashboardTask[];
   attentionDeals: Array<{ deal: DashboardDeal; reason: string }>;
+  attentionLeads: DashboardLeadAttentionCandidate[];
 };

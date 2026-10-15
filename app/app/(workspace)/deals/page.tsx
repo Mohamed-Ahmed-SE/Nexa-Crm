@@ -2,6 +2,8 @@ import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
 import { parseDealSearchParams } from "@/lib/deals/schema";
 import { listWorkspaceDeals } from "@/lib/deals/repository";
+import { listNextTasksByDeal } from "@/lib/deals/next-tasks";
+import { listDealAttentionReasons } from "@/lib/deals/attention";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { DealsWorkspace } from "./deals-workspace";
 
@@ -14,6 +16,18 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
   const supabase = await createSupabaseServerClient();
   if (!supabase) return <DealsLoadError />;
   const data = await listWorkspaceDeals(supabase, context.workspaceId, context.userId, context.fullName, params);
+  const now = new Date();
+  const todayIso = now.toISOString().slice(0, 10);
+  const [nextTasks, attentionReasons] = await Promise.all([
+    view === "board" ? listNextTasksByDeal(supabase, context.workspaceId, data.deals.map(({ id }) => id)) : Promise.resolve({}),
+    listDealAttentionReasons({
+      supabase,
+      workspaceId: context.workspaceId,
+      deals: data.deals.map((deal) => ({ id: deal.id, status: deal.status, expectedCloseDate: deal.expected_close_date, createdAt: deal.created_at })),
+      today: todayIso,
+      now,
+    }),
+  ]);
   return <DealsWorkspace
     canCreate={canCreate}
     canExport={hasWorkspacePermission(context.role, "data.export")}
@@ -23,8 +37,12 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
     currentUserId={context.userId}
     data={data}
+    nextTasks={nextTasks}
+    attentionReasons={attentionReasons}
     ownerFilter={params.ownerId}
-    todayIso={new Date().toISOString().slice(0, 10)}
+    statusFilter={params.status}
+    wonFrom={params.wonFrom}
+    wonTo={params.wonTo}
     search={params.q}
     view={view}
   />;

@@ -25,10 +25,49 @@ const view = {
 const props = {
   leads: [lead], sources: [], tags: [], owners: [{ id: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", label: "Taylor Reed" }], canTag: false, canCreate: false, canImport: false, canExport: false, createIntent: false,
   canEditAll: false, canConvert: false, canArchive: false, conversionOptions: { pipelineId: "", pipelines: [] }, canReassign: false, currentUserId: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", currency: "USD",
-  search: "", statusFilter: "qualified", sourceFilter: "", tagFilter: "", ownerFilter: "", page: 1, totalCount: 1, matchedCount: 1,
+  search: "", statusFilter: "qualified", sourceFilter: "", tagFilter: "", createdFrom: "", createdTo: "", ownerFilter: "", page: 1, totalCount: 1, matchedCount: 1,
   newCount: 0, qualifiedCount: 1, sort: "value_desc" as const, visibleColumns: ["name", "value"] as ("name" | "value")[],
   savedViews: [view], activeViewId: view.id,
 };
+
+describe("LeadWorkspace created-date filters", () => {
+  it("keeps the KPI date range in export and pagination links and exposes a clear action", () => {
+    render(<LeadWorkspace {...props} canExport activeViewId="" matchedCount={30} createdFrom="2026-04-01T00:00:00.000Z" createdTo="2026-04-15T12:00:00.000Z" />);
+
+    expect(screen.getByText("Created date range: 2026-04-01T00:00:00.000Z – 2026-04-15T12:00:00.000Z")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Clear date range" })).toHaveAttribute("href", "/app/leads?status=qualified&sort=value_desc&page=1");
+    expect(screen.getByRole("link", { name: "Export CSV" })).toHaveAttribute("href", "/app/leads/export?status=qualified&createdFrom=2026-04-01T00%3A00%3A00.000Z&createdTo=2026-04-15T12%3A00%3A00.000Z");
+    expect(screen.getByRole("link", { name: "Next" })).toHaveAttribute("href", "/app/leads?status=qualified&createdFrom=2026-04-01T00%3A00%3A00.000Z&createdTo=2026-04-15T12%3A00%3A00.000Z&sort=value_desc&page=2");
+  });
+});
+
+describe("LeadWorkspace empty created-date results", () => {
+  it("explains that a created-date filter produced no matches instead of showing the empty workspace state", () => {
+    render(<LeadWorkspace {...props} leads={[]} matchedCount={0} statusFilter="all" createdFrom="2026-04-01T00:00:00.000Z" createdTo="2026-04-15T12:00:00.000Z" />);
+
+    expect(screen.getByText("No matching leads")).toBeInTheDocument();
+    expect(screen.queryByText("No leads yet")).not.toBeInTheDocument();
+  });
+});
+
+describe("LeadWorkspace owner labels", () => {
+  it("shows the inactive marker on a historical owner without changing assignment options", () => {
+    render(<LeadWorkspace {...props} leads={[{ ...lead, ownerLabel: "Workspace member · 6d648c · Inactive user" }]} visibleColumns={["name", "owner"]} />);
+
+    expect(screen.getByText("Workspace member · 6d648c · Inactive user")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Assign selected leads to owner" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the inactive historical owner selected in the edit form", async () => {
+    const user = userEvent.setup();
+    render(<LeadWorkspace {...props} canEditAll canReassign leads={[{ ...lead, owner_id: "inactive-user" }]} owners={[{ id: "active-user", label: "Active user" }]} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit Taylor Reed" }));
+    const owner = screen.getByRole("combobox", { name: "Owner" });
+    expect(owner).toHaveValue("inactive-user");
+    expect(within(owner).getByRole("option", { name: "Current owner · Inactive user" })).toHaveValue("inactive-user");
+  });
+});
 
 describe("LeadWorkspace bulk actions", () => {
   it("selects only visible-page leads and completes bulk assignment and tag actions", async () => {

@@ -48,6 +48,8 @@ async function loadExportRows(supabase: NonNullable<Awaited<ReturnType<typeof cr
     return fetchAll((from, to) => {
       let query = supabase.from("leads").select("id, full_name, company_name, email, phone, job_title, source_id, status, owner_id, estimated_value, currency, notes_summary, created_at, updated_at, lead_sources(name)").eq("workspace_id", workspaceId).is("archived_at", null).order("created_at").order("id").range(from, to);
       if (params.status !== "all") query = query.eq("status", params.status);
+      if (params.createdFrom) query = query.gte("created_at", params.createdFrom);
+      if (params.createdTo) query = query.lte("created_at", params.createdTo);
       if (matchingTagLeadIds) query = query.in("id", matchingTagLeadIds);
       if (params.sourceId) query = query.eq("source_id", params.sourceId);
       if (params.ownerId === "unassigned") query = query.is("owner_id", null); else if (params.ownerId) query = query.eq("owner_id", params.ownerId);
@@ -74,7 +76,10 @@ async function loadExportRows(supabase: NonNullable<Awaited<ReturnType<typeof cr
     const pipelineNames = new Map(pipelines.map((pipeline) => [String(pipeline.id), String(pipeline.name ?? "")]));
     return fetchAll((from, to) => {
       let query = supabase.from("deals").select("id, pipeline_id, stage_id, title, amount, currency, probability, expected_close_date, owner_id, priority, status, description, created_at, updated_at, companies!deals_workspace_id_company_id_fkey(name), contacts!deals_workspace_id_primary_contact_id_fkey(full_name), pipeline_stages!deals_workspace_id_pipeline_id_stage_id_fkey(name)").eq("workspace_id", workspaceId).is("archived_at", null).order("created_at").order("id").range(from, to);
-      if (params.pipelineId) query = query.eq("pipeline_id", params.pipelineId);
+      if (params.pipelineId && params.pipelineId !== "all") query = query.eq("pipeline_id", params.pipelineId);
+      if (params.status !== "all") query = query.eq("status", params.status);
+      if (params.wonFrom) query = query.gte("won_at", params.wonFrom);
+      if (params.wonTo) query = query.lt("won_at", params.wonTo);
       if (params.ownerId === "unassigned") query = query.is("owner_id", null); else if (params.ownerId) query = query.eq("owner_id", params.ownerId);
       const filter = buildDealSearchFilter(params.q); if (filter) query = query.or(filter);
       return query;

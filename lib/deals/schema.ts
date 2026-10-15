@@ -12,6 +12,7 @@ export const dealInputSchema = z.object({
   ownerId: optionalUuid,
   priority: z.enum(["low", "medium", "high"]),
   description: optionalText(2000),
+  tagIds: z.array(z.string().uuid("Choose valid tags.")).max(100, "Choose no more than 100 tags.").refine((tagIds) => new Set(tagIds).size === tagIds.length, "Each tag can be selected only once.").default([]),
   pipelineId: z.string().uuid("Choose a pipeline."),
 });
 export type DealInput = z.infer<typeof dealInputSchema>;
@@ -24,13 +25,26 @@ export const wonDealOutcomeSchema = z.object({ id: dealIdSchema, amount: z.strin
 export const lostDealOutcomeSchema = z.object({ id: dealIdSchema, lostReasonId: z.string().uuid(), competitor: z.string().trim().max(200).optional().transform((value) => value || null), note: outcomeNote, taskChoice: z.enum(["keep", "complete", "cancel"]) });
 export const reopenDealOutcomeSchema = z.object({ id: dealIdSchema, stageId: stageIdSchema });
 
-export type DealSearchParams = { q: string; ownerId: string; pipelineId: string };
+export type DealSearchParams = {
+  q: string;
+  ownerId: string;
+  pipelineId: string;
+  status: "all" | "open" | "won" | "lost";
+  wonFrom: string;
+  wonTo: string;
+};
+
+const dealSearchDate = z.string().datetime({ offset: true });
 
 export function parseDealSearchParams(input: Record<string, string | string[] | undefined>): DealSearchParams {
   const q = typeof input.q === "string" ? input.q.trim().slice(0, 100) : "";
   const ownerId = typeof input.owner === "string" && (input.owner === "unassigned" || z.string().uuid().safeParse(input.owner).success) ? input.owner : "";
-  const pipelineId = typeof input.pipeline === "string" && z.string().uuid().safeParse(input.pipeline).success ? input.pipeline : "";
-  return { q, ownerId, pipelineId };
+  const pipelineId = typeof input.pipeline === "string" && (input.pipeline === "all" || z.string().uuid().safeParse(input.pipeline).success) ? input.pipeline : "";
+  const status = typeof input.status === "string" && ["all", "open", "won", "lost"].includes(input.status)
+    ? input.status as DealSearchParams["status"] : "all";
+  const wonFrom = typeof input.wonFrom === "string" && dealSearchDate.safeParse(input.wonFrom).success ? input.wonFrom : "";
+  const wonTo = typeof input.wonTo === "string" && dealSearchDate.safeParse(input.wonTo).success ? input.wonTo : "";
+  return { q, ownerId, pipelineId, status, wonFrom, wonTo };
 }
 
 export function buildDealSearchFilter(query: string): string | null {

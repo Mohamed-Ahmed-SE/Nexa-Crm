@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCompanySearchFilter, companyInputSchema, parseCompanySearchParams } from "@/lib/companies/schema";
+import { applyCompanySavedView, buildCompanySearchFilter, companyInputSchema, companySavedViewSchema, companySortOrder, findCompanySavedView, parseCompanySearchParams, parsePersistedCompanyView, type CompanySavedViewInput } from "@/lib/companies/schema";
 
 const ownerId = "83d8aaf1-c78e-41db-ae18-493f44c84b42";
 
@@ -22,8 +22,8 @@ describe("company input", () => {
 
 describe("company list query", () => {
   it.each([
-    { scenario: "valid search parameters", input: { q: " Acme ", owner: ownerId, page: "4" }, expected: { q: "Acme", ownerId, page: 4 } },
-    { scenario: "invalid parameter groups", input: { q: "x".repeat(101), owner: "forged", page: "0" }, expected: { q: "", ownerId: "", page: 1 } },
+    { scenario: "valid search parameters", input: { q: " Acme ", owner: ownerId, sort: "industry_desc", page: "4" }, expected: { q: "Acme", ownerId, sort: "industry_desc", page: 4 } },
+    { scenario: "invalid parameter groups", input: { q: "x".repeat(101), owner: "forged", sort: "secret", page: "0" }, expected: { q: "", ownerId: "", sort: "name_asc", page: 1 } },
   ])("parses $scenario", ({ input, expected }) => {
     expect(parseCompanySearchParams(input)).toEqual(expected);
   });
@@ -33,5 +33,39 @@ describe("company list query", () => {
     ["blank queries", "  ", null],
   ])("builds company search filters for %s", (_scenario, query, expected) => {
     expect(buildCompanySearchFilter(query)).toBe(expected);
+  });
+});
+
+describe("company saved views", () => {
+  const view: CompanySavedViewInput = { name: "Accounts", filters: { q: "Acme", ownerId }, sort: "industry_desc", visibleColumns: ["company", "owner"] };
+
+  it("applies the saved company filters and sort while preserving pagination", () => {
+    expect(applyCompanySavedView({ q: "URL", ownerId: "", sort: "name_asc", page: 3 }, view)).toEqual({
+      q: "Acme", ownerId, sort: "industry_desc", page: 3,
+    });
+  });
+
+  it("resolves only valid IDs present in the caller's saved-view list", () => {
+    const views = [{ id: "83d8aaf1-c78e-41db-ae18-493f44c84b42" }];
+    expect(findCompanySavedView(views[0].id, views)).toBe(views[0]);
+    expect(findCompanySavedView("not-a-view", views)).toBeUndefined();
+    expect(findCompanySavedView("d8d8aaf1-c78e-41db-ae18-493f44c84b42", views)).toBeUndefined();
+  });
+
+  it("validates selected columns and rejects malformed persisted view data", () => {
+    expect(companySavedViewSchema.parse(view)).toMatchObject({ name: "Accounts", sort: "industry_desc" });
+    expect(companySavedViewSchema.safeParse({ ...view, sort: "website_desc" }).success).toBe(false);
+    expect(companySavedViewSchema.safeParse({ ...view, visibleColumns: ["company", "company"] }).success).toBe(false);
+    expect(parsePersistedCompanyView({ filters: { q: "Acme", ownerId: "", extra: true }, sort: view.sort, visible_columns: view.visibleColumns })).toBeNull();
+    expect(parsePersistedCompanyView({ filters: view.filters, sort: view.sort, visible_columns: view.visibleColumns })).toEqual({ filters: view.filters, sort: view.sort, visibleColumns: view.visibleColumns });
+  });
+
+  it.each([
+    ["name_desc", [{ column: "name", ascending: false }, { column: "id", ascending: true }]],
+    ["industry_asc", [{ column: "industry", ascending: true }, { column: "id", ascending: true }]],
+    ["created_desc", [{ column: "created_at", ascending: false }, { column: "id", ascending: true }]],
+    ["updated_asc", [{ column: "updated_at", ascending: true }, { column: "id", ascending: true }]],
+  ] as const)("uses a stable tie-breaker for %s sorting", (sort, expected) => {
+    expect(companySortOrder(sort)).toEqual(expected);
   });
 });

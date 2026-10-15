@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ContactListRow, ContactSavedView } from "@/lib/contacts/repository";
 import type { ContactViewColumn } from "@/lib/contacts/schema";
 import { ContactDetailWorkspace, ContactsWorkspace } from "./contacts-workspace";
-import { archiveContactAction, toggleContactNotePinnedAction } from "./actions";
+import { archiveContactAction, createContactAction, deleteContactNoteAction, toggleContactNotePinnedAction, updateContactAction, updateContactNoteAction } from "./actions";
 
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
@@ -18,6 +18,8 @@ vi.mock("./actions", () => ({
   updateContactAction: vi.fn(),
   uploadContactFileAction: vi.fn(),
   toggleContactNotePinnedAction: vi.fn(),
+  updateContactNoteAction: vi.fn(),
+  deleteContactNoteAction: vi.fn(),
   saveContactViewAction: vi.fn(),
   deleteContactViewAction: vi.fn(),
 }));
@@ -30,6 +32,7 @@ const populatedContact: ContactListRow = {
   last_name: "Chen",
   email: "avery@example.com",
   phone: "555-0142",
+  address: "12 Market St\nSuite 4",
   job_title: "Operations Lead",
   linkedin_url: null,
   owner_id: null,
@@ -119,6 +122,52 @@ const detailProps = {
   owners: [], companies: [], canEdit: true, canEditAll: false, currentUserId: "user-1", canReassign: false, view: "overview",
 };
 
+describe("Contact address form persistence", () => {
+  it("submits a new multiline address with the create-contact form", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createContactAction).mockResolvedValueOnce({ ok: true, message: "Contact added." });
+    render(<ContactsWorkspace {...workspaceProps} canCreate />);
+
+    await user.click(screen.getByRole("button", { name: "Add Contact" }));
+    await user.type(screen.getByRole("textbox", { name: "First name" }), "Sam");
+    await user.type(screen.getByRole("textbox", { name: "Last name" }), "Rivera");
+    await user.type(screen.getByRole("textbox", { name: "Address (optional)" }), "12 Market St\nSuite 4");
+    await user.click(screen.getByRole("button", { name: "Add contact" }));
+
+    await waitFor(() => expect(createContactAction).toHaveBeenCalled());
+    expect(vi.mocked(createContactAction).mock.calls.at(-1)?.[1].get("address")).toBe("12 Market St\nSuite 4");
+  });
+
+  it("loads and submits the existing address from the edit form and displays it in detail", async () => {
+    const user = userEvent.setup();
+    vi.mocked(updateContactAction).mockResolvedValueOnce({ ok: true, message: "Contact updated." });
+    render(<ContactDetailWorkspace {...detailProps} />);
+
+    expect(screen.getByText("Address").parentElement).toHaveTextContent("12 Market St Suite 4");
+    await user.click(screen.getByRole("button", { name: "Edit Contact" }));
+    const address = screen.getByRole("textbox", { name: "Address (optional)" });
+    expect(address).toHaveValue("12 Market St\nSuite 4");
+    await user.clear(address);
+    await user.type(address, "Updated location");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updateContactAction).toHaveBeenCalled());
+    expect(vi.mocked(updateContactAction).mock.calls.at(-1)?.[1].get("address")).toBe("Updated location");
+  });
+});
+
+describe("ContactDetailWorkspace owner editing", () => {
+  it("keeps the inactive historical owner selected with the required marker", async () => {
+    const user = userEvent.setup();
+    render(<ContactDetailWorkspace {...detailProps} contact={{ ...populatedContact, owner_id: "inactive-user" }} owners={[{ id: "active-user", label: "Active user" }]} canReassign />);
+
+    await user.click(screen.getByRole("button", { name: "Edit contact information" }));
+    const owner = screen.getByRole("combobox", { name: "Owner" });
+    expect(owner).toHaveValue("inactive-user");
+    expect(within(owner).getByRole("option", { name: "Current owner · Inactive user" })).toHaveValue("inactive-user");
+  });
+});
+
 describe("ContactDetailWorkspace note pinning", () => {
   it("shows pinned state and lets an editor unpin their note with success feedback and refresh", async () => {
     const user = userEvent.setup();
@@ -207,5 +256,97 @@ describe("ContactsWorkspace archiving", () => {
     await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     expect(routerMocks.refresh).toHaveBeenCalledTimes(2);
     expect(vi.mocked(archiveContactAction).mock.calls[2]?.[1].get("id")).toBe(secondContact.id);
+  });
+});
+
+describe("ContactDetailWorkspace note editing and deletion", () => {
+  it("edits a note inline with pending feedback, success status, and a refresh", async () => {
+    const user = userEvent.setup();
+    let finishAction!: (response: { ok: boolean; message: string }) => void;
+    vi.mocked(updateContactNoteAction).mockReturnValueOnce(new Promise((resolve) => { finishAction = resolve; }));
+    routerMocks.refresh.mockClear();
+    render(<ContactDetailWorkspace {...detailProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit note" }));
+    const textbox = screen.getByRole("textbox", { name: "Edit note text" });
+    expect(textbox).toHaveValue(ownNote.body);
+    await user.clear(textbox);
+    await user.type(textbox, "Call on Friday");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
+    finishAction({ ok: true, message: "Note updated." });
+    expect(await screen.findByRole("status")).toHaveTextContent("Note updated.");
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledTimes(1));
+    const submitted = vi.mocked(updateContactNoteAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("contactId")).toBe(populatedContact.id);
+    expect(submitted?.get("noteId")).toBe(ownNote.id);
+    expect(submitted?.get("body")).toBe("Call on Friday");
+    expect(screen.queryByRole("textbox", { name: "Edit note text" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the editor open with an alert when saving fails and closes it on cancel without saving", async () => {
+    const user = userEvent.setup();
+    vi.mocked(updateContactNoteAction).mockClear();
+    vi.mocked(updateContactNoteAction).mockResolvedValueOnce({ message: "You can update only your own notes." });
+    render(<ContactDetailWorkspace {...detailProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit note" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("You can update only your own notes.");
+    expect(screen.getByRole("textbox", { name: "Edit note text" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("textbox", { name: "Edit note text" })).not.toBeInTheDocument();
+    expect(vi.mocked(updateContactNoteAction)).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires confirmation before deleting a note and refreshes after success", async () => {
+    const user = userEvent.setup();
+    let finishAction!: (response: { ok: boolean; message: string }) => void;
+    vi.mocked(deleteContactNoteAction).mockReset();
+    vi.mocked(deleteContactNoteAction).mockReturnValueOnce(new Promise((resolve) => { finishAction = resolve; }));
+    routerMocks.refresh.mockClear();
+    render(<ContactDetailWorkspace {...detailProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete note" }));
+    expect(screen.getByText("Delete this note? This cannot be undone.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Keep note" }));
+    expect(vi.mocked(deleteContactNoteAction)).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Delete note" }));
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+    finishAction({ ok: true, message: "Note deleted." });
+    expect(await screen.findByRole("status")).toHaveTextContent("Note deleted.");
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(deleteContactNoteAction).mock.calls[0]?.[1].get("contactId")).toBe(populatedContact.id);
+    expect(vi.mocked(deleteContactNoteAction).mock.calls[0]?.[1].get("noteId")).toBe(ownNote.id);
+  });
+
+  it("announces a delete failure while keeping the confirmation open", async () => {
+    const user = userEvent.setup();
+    vi.mocked(deleteContactNoteAction).mockReset();
+    vi.mocked(deleteContactNoteAction).mockResolvedValueOnce({ message: "Note could not be deleted. Refresh the contact and try again." });
+    render(<ContactDetailWorkspace {...detailProps} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete note" }));
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Note could not be deleted. Refresh the contact and try again.");
+    expect(screen.getByRole("button", { name: "Confirm delete" })).toBeInTheDocument();
+  });
+
+  it("shows edit and delete only for notes the user may modify", () => {
+    const otherNote = { ...ownNote, created_by: "user-2" };
+    const { rerender } = render(<ContactDetailWorkspace {...detailProps} notes={[otherNote]} />);
+    expect(screen.queryByRole("button", { name: "Edit note" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete note" })).not.toBeInTheDocument();
+
+    rerender(<ContactDetailWorkspace {...detailProps} canEditAll notes={[otherNote]} />);
+    expect(screen.getByRole("button", { name: "Edit note" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete note" })).toBeInTheDocument();
+
+    rerender(<ContactDetailWorkspace {...detailProps} canEdit={false} canEditAll />);
+    expect(screen.queryByRole("button", { name: "Edit note" })).not.toBeInTheDocument();
   });
 });

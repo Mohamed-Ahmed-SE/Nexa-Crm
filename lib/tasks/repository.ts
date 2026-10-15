@@ -1,5 +1,7 @@
 import "server-only";
 
+import { inactiveOwnerLabel, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
+
 import { formatTaskOwners } from "@/lib/tasks/owner-labels";
 import { escapeTaskSearchTerm, restrictAllTasksView, taskDateBounds, taskLocalDateBounds, taskPageSize, taskWeekBounds, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -8,6 +10,7 @@ type Supabase = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient
 export type { TaskOwner } from "@/lib/tasks/owner-labels";
 export type TaskRelation = { id: string; type: "company" | "contact" | "lead" | "deal"; label: string };
 export type TaskRow = {
+  assigneeLabel?: string;
   id: string; title: string; description: string | null; task_type: string; status: "open" | "completed" | "cancelled";
   priority: "low" | "medium" | "high"; due_at: string | null; reminder_at: string | null; assigned_to: string | null; created_by: string;
   related_entity_type: TaskRelation["type"] | null; related_entity_id: string | null; completed_at: string | null;
@@ -73,7 +76,14 @@ export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, user
   if (result.error || ownersResult.error) throw new Error("Unable to load workspace tasks.");
   const raw = result.data ?? [];
   const relations = await loadTaskRelations(supabase, workspaceId, raw);
-  const tasks: TaskRow[] = raw.map((task) => ({ ...task, relation: task.related_entity_id && task.related_entity_type ? relations.get(`${task.related_entity_type}:${task.related_entity_id}`) ?? null : null })) as TaskRow[];
+  const inactiveAssigneeIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, raw.map(({ assigned_to }) => assigned_to));
+  const tasks: TaskRow[] = raw.map((task) => ({
+    ...task,
+    assigneeLabel: task.assigned_to && inactiveAssigneeIds.has(task.assigned_to)
+      ? inactiveOwnerLabel(`Workspace member · ${task.assigned_to.slice(0, 6)}`)
+      : undefined,
+    relation: task.related_entity_id && task.related_entity_type ? relations.get(`${task.related_entity_type}:${task.related_entity_id}`) ?? null : null,
+  })) as TaskRow[];
   const owners = formatTaskOwners(ownersResult.data ?? [], userId);
   return { tasks, owners, matchedCount: result.count ?? 0 };
 }
@@ -150,11 +160,16 @@ export async function listTaskOptions(supabase: Supabase, workspaceId: string, u
   const [companies, contacts, leads, deals] = await Promise.all([
     supabase.from("companies").select("id,name,owner_id").eq("workspace_id", workspaceId).is("archived_at", null).order("name"),
     supabase.from("contacts").select("id,first_name,last_name,owner_id").eq("workspace_id", workspaceId).is("archived_at", null).order("first_name"),
-    canReassign ? supabase.from("leads").select("id,full_name").eq("workspace_id", workspaceId).is("archived_at", null).order("full_name") : Promise.resolve({ data: [], error: null }),
+    (() => {
+      let query = supabase.from("leads").select("id,full_name,owner_id").eq("workspace_id", workspaceId).is("archived_at", null).order("full_name");
+      if (!canReassign) query = query.eq("owner_id", userId);
+      return query;
+    })(),
     canReassign ? supabase.from("deals").select("id,title").eq("workspace_id", workspaceId).is("archived_at", null).eq("status", "open").order("title") : Promise.resolve({ data: [], error: null }),
   ]);
   if (companies.error || contacts.error || leads.error || deals.error) throw new Error("Unable to load task options.");
   const allowedCompanies = (companies.data ?? []).filter((row) => canReassign || row.owner_id === userId).map((row) => ({ id: row.id, type: "company" as const, label: row.name }));
   const allowedContacts = (contacts.data ?? []).filter((row) => canReassign || row.owner_id === userId).map((row) => ({ id: row.id, type: "contact" as const, label: `${row.first_name} ${row.last_name}`.trim() }));
-  return [...allowedCompanies, ...allowedContacts, ...(leads.data ?? []).map((row) => ({ id: row.id, type: "lead" as const, label: row.full_name })), ...(deals.data ?? []).map((row) => ({ id: row.id, type: "deal" as const, label: row.title }))];
+  const allowedLeads = (leads.data ?? []).filter((row) => canReassign || row.owner_id === userId).map((row) => ({ id: row.id, type: "lead" as const, label: row.full_name }));
+  return [...allowedCompanies, ...allowedContacts, ...allowedLeads, ...(deals.data ?? []).map((row) => ({ id: row.id, type: "deal" as const, label: row.title }))];
 }

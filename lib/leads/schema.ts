@@ -34,6 +34,8 @@ export type LeadSearchParams = {
   sourceId: string;
   ownerId: string;
   tagId: string;
+  createdFrom: string;
+  createdTo: string;
   page: number;
   sort: "updated_desc" | "updated_asc" | "name_asc" | "name_desc" | "value_asc" | "value_desc";
 };
@@ -44,6 +46,8 @@ const searchParamsSchema = z.object({
   source: z.union([z.string().uuid(), z.literal("")]).default(""),
   owner: z.union([z.string().uuid(), z.literal(""), z.literal("unassigned")]).default(""),
   tagId: z.union([z.string().uuid(), z.literal("")]).default(""),
+  createdFrom: z.string().datetime({ offset: true }).catch(""),
+  createdTo: z.string().datetime({ offset: true }).catch(""),
   page: z.coerce.number().int().min(1).max(10000).default(1),
   sort: z.enum(["updated_desc", "updated_asc", "name_asc", "name_desc", "value_asc", "value_desc"]).default("updated_desc"),
 });
@@ -55,11 +59,13 @@ export function parseLeadSearchParams(input: Record<string, string | string[] | 
     source: typeof input.source === "string" ? input.source : "",
     owner: typeof input.owner === "string" ? input.owner : "",
     tagId: typeof input.tagId === "string" ? input.tagId : "",
+    createdFrom: typeof input.createdFrom === "string" ? input.createdFrom : "",
+    createdTo: typeof input.createdTo === "string" ? input.createdTo : "",
     page: typeof input.page === "string" ? input.page : "1",
     sort: typeof input.sort === "string" ? input.sort : "updated_desc",
   });
-  if (!parsed.success) return { q: "", status: "all", sourceId: "", ownerId: "", tagId: "", page: 1, sort: "updated_desc" };
-  return { q: parsed.data.q, status: parsed.data.status, sourceId: parsed.data.source, ownerId: parsed.data.owner, tagId: parsed.data.tagId, page: parsed.data.page, sort: parsed.data.sort };
+  if (!parsed.success) return { q: "", status: "all", sourceId: "", ownerId: "", tagId: "", createdFrom: "", createdTo: "", page: 1, sort: "updated_desc" };
+  return { q: parsed.data.q, status: parsed.data.status, sourceId: parsed.data.source, ownerId: parsed.data.owner, tagId: parsed.data.tagId, createdFrom: parsed.data.createdFrom, createdTo: parsed.data.createdTo, page: parsed.data.page, sort: parsed.data.sort };
 }
 
 export function buildLeadSearchFilter(query: string): string | null {

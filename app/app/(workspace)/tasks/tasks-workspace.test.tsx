@@ -17,7 +17,7 @@ const task: TaskRow = {
   created_by: "c2155412-d8a0-4792-b2bc-f6064b2798f4", related_entity_type: "company", related_entity_id: "012be84b-6794-4e6a-a149-8d92c0a4d110",
   completed_at: null, relation: { id: "012be84b-6794-4e6a-a149-8d92c0a4d110", type: "company", label: "Northstar Labs" },
 };
-const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, overview: { dueToday: 3, overdue: 2, completedThisWeek: 7, upcoming: 11 }, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, timeZone: "UTC", page: 1 } as TaskSearchParams, railTasks: [task], railTaskCount: 1, calendarMonth: "2026-04", calendarTaskDates: ["2026-04-05"], railDate: "2026-04-05", completion: { open: 4, completed: 7, cancelled: 1 }, canCreate: true, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
+const props = { tasks: [task], owners: [{ id: task.assigned_to!, label: "You" }], options: [], matchedCount: 1, overview: { dueToday: 3, overdue: 2, completedThisWeek: 7, upcoming: 11 }, params: { view: "my", q: "", type: "all", priority: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, timeZone: "UTC", page: 1 } as TaskSearchParams, railTasks: [task], railTaskCount: 1, calendarMonth: "2026-04", calendarTaskDates: ["2026-04-05"], railDate: "2026-04-05", completion: { open: 4, completed: 7, cancelled: 1 }, canCreate: true, createIntent: false, createContext: null, canEdit: true, canReassign: false, canExport: true, currentUserId: task.assigned_to! };
 
 function expectTaskTableColumnsAligned() {
   const table = screen.getByRole("table");
@@ -28,6 +28,16 @@ function expectTaskTableColumnsAligned() {
 }
 
 describe("TasksWorkspace", () => {
+  it("opens a permitted create intent with the server-approved related record selected", () => {
+    const options = [{ id: "83d8aaf1-c78e-41db-ae18-493f44c84b42", type: "lead" as const, label: "Mira Chen" }];
+    const { rerender } = render(<TasksWorkspace {...props} options={options} createIntent createContext={{ type: "lead", id: options[0].id }} />);
+    expect(screen.getByRole("dialog", { name: "Add task" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Related record type" })).toHaveValue("lead");
+    expect(screen.getByRole("combobox", { name: "Related record" })).toHaveValue(options[0].id);
+    rerender(<TasksWorkspace {...props} options={options} canCreate={false} createIntent createContext={{ type: "lead", id: options[0].id }} />);
+    expect(screen.queryByRole("dialog", { name: "Add task" })).not.toBeInTheDocument();
+  });
+
   it("renders the four workspace task overview counts", () => {
     render(<TasksWorkspace {...props} />);
     const overview = screen.getByRole("region", { name: "Task overview" });

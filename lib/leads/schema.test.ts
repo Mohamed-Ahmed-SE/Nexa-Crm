@@ -40,8 +40,15 @@ describe("bulk lead input validation", () => {
 describe("lead list query parsing", () => {
   it("accepts the supported filters and bounded page number", () => {
     expect(parseLeadSearchParams({ q: "  Acme ", status: "qualified", owner: "unassigned", page: "3" })).toEqual({
-      q: "Acme", status: "qualified", sourceId: "", ownerId: "unassigned", tagId: "", page: 3, sort: "updated_desc",
+      q: "Acme", status: "qualified", sourceId: "", ownerId: "unassigned", tagId: "", createdFrom: "", createdTo: "", page: 3, sort: "updated_desc",
     });
+  });
+
+  it("accepts lead-created timestamp bounds and ignores malformed bounds", () => {
+    expect(parseLeadSearchParams({ createdFrom: "2026-04-01T00:00:00.000Z", createdTo: "2026-04-15T12:00:00.000Z" })).toMatchObject({
+      createdFrom: "2026-04-01T00:00:00.000Z", createdTo: "2026-04-15T12:00:00.000Z",
+    });
+    expect(parseLeadSearchParams({ createdFrom: "not-a-date", createdTo: ["2026-04-15T12:00:00.000Z"] })).toMatchObject({ createdFrom: "", createdTo: "" });
   });
 
   it("validates tag identifiers and falls back safely on invalid or duplicate parameters", () => {
@@ -50,7 +57,7 @@ describe("lead list query parsing", () => {
     });
     expect(parseLeadSearchParams({ tagId: "not-a-uuid" }).tagId).toBe("");
     expect(parseLeadSearchParams({ q: ["one", "two"], status: "converted", page: "0" })).toEqual({
-      q: "", status: "all", sourceId: "", ownerId: "", tagId: "", page: 1, sort: "updated_desc",
+      q: "", status: "all", sourceId: "", ownerId: "", tagId: "", createdFrom: "", createdTo: "", page: 1, sort: "updated_desc",
     });
   });
 });

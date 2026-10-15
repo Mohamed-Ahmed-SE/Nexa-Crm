@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(8);
+select plan(9);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -38,6 +38,11 @@ select lives_ok(
     values ('d1200000-0000-4000-8000-000000000001', 'd1100000-0000-4000-8000-000000000001', 'contacts', 'Contacts', '{}', '"updated_desc"', '["name"]')$$,
   'a member can save a contacts view'
 );
+select lives_ok(
+  $$insert into public.saved_views (workspace_id, user_id, entity_type, name, filters, sort, visible_columns)
+    values ('d1200000-0000-4000-8000-000000000001', 'd1100000-0000-4000-8000-000000000001', 'companies', 'Companies', '{"q":"Acme","ownerId":""}', '"name_asc"', '["company","owner"]')$$,
+  'a member can save a companies view'
+);
 select set_config('request.jwt.claim.sub', 'd1100000-0000-4000-8000-000000000002', true);
 select is((select count(*)::integer from public.saved_views), 0, 'another workspace member cannot read a private view');
 update public.saved_views set name = 'Changed';
@@ -49,6 +54,6 @@ set local role authenticated;
 delete from public.saved_views;
 reset role;
 select set_config('request.jwt.claim.sub', 'd1100000-0000-4000-8000-000000000001', true);
-select is((select count(*)::integer from public.saved_views where workspace_id = 'd1200000-0000-4000-8000-000000000001' and user_id = 'd1100000-0000-4000-8000-000000000001'), 2, 'another workspace member cannot delete a private view');
+select is((select count(*)::integer from public.saved_views where workspace_id = 'd1200000-0000-4000-8000-000000000001' and user_id = 'd1100000-0000-4000-8000-000000000001'), 3, 'another workspace member cannot delete a private view');
 select * from finish();
 rollback;

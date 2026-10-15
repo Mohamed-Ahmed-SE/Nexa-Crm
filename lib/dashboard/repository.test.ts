@@ -43,7 +43,7 @@ function dashboardClient({ failedReads = {} }: DashboardClientOptions = {}) {
       select: (...args) => { selection = String(args[0]); return query; },
       eq: () => query, is: () => query, not: () => query, order: () => query,
       limit: () => query, gte: () => query, lte: () => query,
-      in: () => { labelRead = true; return query; },
+      in: (...args) => { if (args[0] === "id") labelRead = true; return query; },
       maybeSingle: async () => ({ data: { default_currency: "USD", timezone: "UTC" }, error: failedReads.workspaces ?? null }),
       then: (resolve, reject) => Promise.resolve(responseFor(table, selection, labelRead, tables, failedReads)).then(resolve, reject),
     };
@@ -51,7 +51,13 @@ function dashboardClient({ failedReads = {} }: DashboardClientOptions = {}) {
   };
   return {
     from,
-    rpc: async () => ({ data: [], error: failedReads.get_workspace_report_member_labels ?? null }),
+    rpc: async (name: string) => {
+      if (name === "get_workspace_report_member_labels") {
+        const error = failedReads[name] ?? null;
+        return { data: error ? [] : [{ user_id: "member-1", display_name: "Sam Rivera" }], error };
+      }
+      return { data: [], error: failedReads[name] ?? null };
+    },
   };
 }
 
@@ -65,7 +71,7 @@ function responseFor(
   const queryName = labelRead ? `${table} labels` : table === "activities" && selection === "related_entity_id,occurred_at" ? "deal activities" : table;
   const error = failedReads[queryName];
   const data = table === "workspaces" ? { default_currency: "USD", timezone: "UTC" }
-    : labelRead ? []
+    : labelRead || table === "leads" && selection === "id,full_name,status,created_at" ? []
       : table === "activities" && selection === "related_entity_id,occurred_at" ? [] : tables[table] ?? [];
   return { data, error: error ?? null };
 }
@@ -86,6 +92,7 @@ describe("workspace dashboard repository query boundaries", () => {
 
     const dashboard = await loadWorkspaceDashboard(supabase as never, workspaceId, new Date("2026-04-15T12:00:00.000Z"));
 
+    expect(dashboard).toMatchObject({ monthStart: "2026-04-01T00:00:00.000Z", monthEnd: "2026-05-01T00:00:00.000Z", now: "2026-04-15T12:00:00.000Z" });
     expect(dashboard.deals[0]).toMatchObject({ id: "deal-1", title: "Renewal", owner: "Workspace member", company: "Acme", contact: "Taylor Reed" });
     expect(dashboard.stages.map(({ id }) => id)).toEqual(["stage-1"]);
     expect(dashboard.leads.map(({ id }) => id)).toEqual(["lead-1"]);
@@ -97,6 +104,18 @@ describe("workspace dashboard repository query boundaries", () => {
       { query: "contacts labels", code: "42501" },
       { query: "leads labels", code: "42501" },
     ]));
+    expect(JSON.stringify(logDiagnostic.mock.calls)).not.toContain(unsafeErrorDetails);
+  });
+
+  it("fails closed when inactive-owner status cannot be verified", async () => {
+    const logDiagnostic = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const supabase = dashboardClient({
+      failedReads: { list_inactive_workspace_member_ids: { code: "42501", message: unsafeErrorDetails, details: unsafeErrorDetails } },
+    });
+
+    await expect(loadWorkspaceDashboard(supabase as never, workspaceId)).rejects.toBeInstanceOf(DashboardUnavailableError);
+
+    expect(logDiagnostic).toHaveBeenCalledExactlyOnceWith({ query: "list_inactive_workspace_member_ids", code: "42501" });
     expect(JSON.stringify(logDiagnostic.mock.calls)).not.toContain(unsafeErrorDetails);
   });
 

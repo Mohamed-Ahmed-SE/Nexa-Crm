@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useActionState, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Building2, CalendarClock, Check, ChevronLeft, ChevronRight, Globe, Mail, Pin, Plus, Search, X } from "lucide-react";
-import { addCompanyNoteAction, archiveCompanyAction, completeCompanyTaskAction, createCompanyAction, createCompanyTaskAction, logCompanyActivityAction, toggleCompanyNotePinnedAction, updateCompanyAction, uploadCompanyFileAction, type CompanyActionState } from "./actions";
-import { type CompanyDetail, type CompanyListRow, type CompanyOwner } from "@/lib/companies/repository";
-import { companyPageSize } from "@/lib/companies/schema";
+import { addCompanyNoteAction, archiveCompanyAction, completeCompanyTaskAction, createCompanyAction, createCompanyTaskAction, deleteCompanyNoteAction, logCompanyActivityAction, toggleCompanyNotePinnedAction, updateCompanyAction, updateCompanyNoteAction, uploadCompanyFileAction, type CompanyActionState } from "./actions";
+import { type CompanyDetail, type CompanyListRow, type CompanyOwner, type CompanySavedView } from "@/lib/companies/repository";
+import { companyPageSize, companyViewColumns, companyViewSorts, type CompanyViewColumn, type CompanyViewSort } from "@/lib/companies/schema";
+import { deleteCompanyViewAction, saveCompanyViewAction, type CompanySavedViewActionState } from "./saved-view-actions";
 import { useDateFormat } from "@/components/auth/date-format-provider";
+import { NoteEditDeleteControls } from "@/components/crm/note-actions";
 import { formatCalendarDate, formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
 
 const emptyState: CompanyActionState = {};
+const emptySavedViewState: CompanySavedViewActionState = {};
 const money = (amount: number, currency: string) => new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
 const dateTime = (value: string | null, dateFormat: DateFormat) => value ? formatCalendarDateTime(value, dateFormat) : "—";
 const dateOnly = (value: string | null, dateFormat: DateFormat) => value ? formatCalendarDate(value, dateFormat) : "No due date";
@@ -31,12 +34,51 @@ function useRefreshOnSuccess(state: CompanyActionState, close?: () => void) {
   useEffect(() => { if (state.ok) { closeRef.current?.(); router.refresh(); } }, [state.ok, router]);
 }
 
-export function CompaniesWorkspace({ companies, matchedCount, totalCount, owners, search, ownerId, page, canCreate, canImport, canExport, canEditAll, canEditOwn, currentUserId }: {
-  companies: CompanyListRow[]; matchedCount: number; totalCount: number; owners: CompanyOwner[]; search: string; ownerId: string; page: number;
-  canCreate: boolean; canImport: boolean; canExport: boolean; canEditAll: boolean; canEditOwn: boolean; currentUserId: string;
+const companyColumnLabels: Record<CompanyViewColumn, string> = {
+  company: "Company", industry: "Industry", contacts: "Contacts", open_deals: "Open Deals",
+  pipeline_value: "Pipeline Value", owner: "Owner", last_activity: "Last Activity", next_activity: "Next Activity",
+};
+const companySortLabels: Record<CompanyViewSort, string> = {
+  name_asc: "Company name A–Z", name_desc: "Company name Z–A", industry_asc: "Industry A–Z", industry_desc: "Industry Z–A",
+  created_desc: "Recently created", created_asc: "Oldest created", updated_desc: "Recently updated", updated_asc: "Least recently updated",
+};
+
+function SavedCompanyViewControls({ search, ownerId, sort, visibleColumns, onVisibleColumnsChange, activeViewId }: {
+  search: string; ownerId: string; sort: CompanyViewSort; visibleColumns: CompanyViewColumn[];
+  onVisibleColumnsChange: (columns: CompanyViewColumn[]) => void; activeViewId: string;
+}) {
+  const router = useRouter();
+  const [saveState, saveAction, saving] = useActionState(saveCompanyViewAction, emptySavedViewState);
+  const [deleteState, deleteAction, deleting] = useActionState(deleteCompanyViewAction, emptySavedViewState);
+  useEffect(() => { if (saveState.ok || deleteState.ok) router.refresh(); }, [saveState.ok, deleteState.ok, router]);
+  return <section aria-label="Saved company views" className="leads-view-controls">
+    <form action={saveAction} className="leads-view-save">
+      <label className="leads-field"><span>Save current view</span><input maxLength={80} name="name" placeholder="View name" required /></label>
+      <input name="q" type="hidden" value={search} /><input name="ownerId" type="hidden" value={ownerId} /><input name="sort" type="hidden" value={sort} />
+      <fieldset><legend>Visible columns</legend>{companyViewColumns.map((column) => <label key={column}>
+        <input checked={visibleColumns.includes(column)} name="visibleColumns" onChange={(event) => onVisibleColumnsChange(event.currentTarget.checked ? [...visibleColumns, column] : visibleColumns.filter((visible) => visible !== column))} type="checkbox" value={column} />{companyColumnLabels[column]}
+      </label>)}</fieldset>
+      <button className="leads-secondary-button" disabled={saving || visibleColumns.length === 0} type="submit">{saving ? "Saving…" : "Save view"}</button>
+      {saveState.message && <p aria-live="polite" className={saveState.ok ? "contact-success" : "leads-form-message"} role={saveState.ok ? "status" : "alert"}>{saveState.message}</p>}
+    </form>
+    {activeViewId && <form action={deleteAction} className="leads-view-delete">
+      <input name="id" type="hidden" value={activeViewId} />
+      <button className="leads-secondary-button" disabled={deleting} type="submit">{deleting ? "Deleting…" : "Delete this view"}</button>
+      {deleteState.message && <p aria-live="polite" className={deleteState.ok ? "contact-success" : "leads-form-message"} role={deleteState.ok ? "status" : "alert"}>{deleteState.message}</p>}
+    </form>}
+  </section>;
+}
+
+export function CompaniesWorkspace({ companies, matchedCount, totalCount, owners, search, ownerId, sort, page, canCreate, createIntent, canImport, canExport, canEditAll, canEditOwn, currentUserId, savedViews, activeViewId, visibleColumns }: {
+  companies: CompanyListRow[]; matchedCount: number; totalCount: number; owners: CompanyOwner[]; search: string; ownerId: string; sort: CompanyViewSort; page: number;
+  canCreate: boolean; createIntent: boolean; canImport: boolean; canExport: boolean; canEditAll: boolean; canEditOwn: boolean; currentUserId: string;
+  savedViews: CompanySavedView[]; activeViewId: string; visibleColumns: CompanyViewColumn[];
 }) {
   const dateFormat = useDateFormat();
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(canCreate && createIntent);
+  const [columnSelection, setColumnSelection] = useState({ viewId: activeViewId, columns: visibleColumns });
+  useEffect(() => { if (!canCreate) setFormOpen(false); }, [canCreate]);
+  const selectedColumns = columnSelection.viewId === activeViewId ? columnSelection.columns : visibleColumns;
   const lastPage = Math.max(1, Math.ceil(matchedCount / companyPageSize));
   const canEdit = (company: CompanyListRow) => canEditAll || (canEditOwn && company.owner_id === currentUserId);
   return <main className="dashboard-page companies-page">
@@ -46,26 +88,39 @@ export function CompaniesWorkspace({ companies, matchedCount, totalCount, owners
     </header>
     <section aria-label="Company list" className="leads-panel">
       <form action="/app/companies" className="leads-toolbar" role="search">
-        <label className="companies-search"><Search aria-hidden="true" size={16} /><input aria-label="Search companies" defaultValue={search} name="q" placeholder="Search company, industry, domain, contact" /></label>
-        <label className="leads-filter"><span className="sr-only">Filter by owner</span><select aria-label="Filter by owner" defaultValue={ownerId} name="owner"><option value="">All owners</option><option value="unassigned">Unassigned</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select></label>
-        <button className="leads-secondary-button" type="submit">Search</button>
+        <label className="companies-search"><Search aria-hidden="true" size={16} /><input aria-label="Search companies" defaultValue={search} name="q" onChange={clearCompanyView} placeholder="Search company, industry, domain, contact" /></label>
+        <label className="leads-filter"><span className="sr-only">Filter by owner</span><select aria-label="Filter by owner" defaultValue={ownerId} name="owner" onChange={clearCompanyView}><option value="">All owners</option><option value="unassigned">Unassigned</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select></label>
+        <label className="leads-filter"><span className="sr-only">Saved view</span><select aria-label="Saved view" defaultValue={activeViewId} name="view"><option value="">Current filters</option>{savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}</select></label>
+        <label className="leads-filter"><span className="sr-only">Sort companies</span><select aria-label="Sort companies" defaultValue={sort} name="sort" onChange={clearCompanyView}>{companyViewSorts.map((option) => <option key={option} value={option}>{companySortLabels[option]}</option>)}</select></label>
+        <button className="leads-secondary-button" type="submit">Apply filters</button>
       </form>
-      <div className="companies-table-wrap"><table className="leads-table companies-table"><thead><tr><th scope="col">Company</th><th scope="col">Industry</th><th scope="col">Contacts</th><th scope="col">Open deals</th><th scope="col">Pipeline value</th><th scope="col">Owner</th><th scope="col">Last activity</th><th scope="col">Next activity</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+      <SavedCompanyViewControls activeViewId={activeViewId} onVisibleColumnsChange={(columns) => setColumnSelection({ viewId: activeViewId, columns })} ownerId={ownerId} search={search} sort={sort} visibleColumns={selectedColumns} />
+      <div className="companies-table-wrap"><table className="leads-table companies-table"><thead><tr>{selectedColumns.includes("company") && <th scope="col">Company</th>}{selectedColumns.includes("industry") && <th scope="col">Industry</th>}{selectedColumns.includes("contacts") && <th scope="col">Contacts</th>}{selectedColumns.includes("open_deals") && <th scope="col">Open Deals</th>}{selectedColumns.includes("pipeline_value") && <th scope="col">Pipeline Value</th>}{selectedColumns.includes("owner") && <th scope="col">Owner</th>}{selectedColumns.includes("last_activity") && <th scope="col">Last Activity</th>}{selectedColumns.includes("next_activity") && <th scope="col">Next Activity</th>}<th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{companies.map((company) => <tr key={company.id}>
-          <td><div className="company-name-cell"><span aria-hidden="true" className="company-initials">{initials(company.name)}</span><div><Link href={`/app/companies/${company.id}`}><strong>{company.name}</strong></Link><small>{company.website?.replace(/^https?:\/\//, "") || "—"}</small></div></div></td>
-          <td>{company.industry || "—"}</td><td>{company.contactsCount}</td><td>{company.openDealsCount}</td>
-          <td className="leads-amount">{company.openDealsCount ? company.currency ? money(company.openPipelineValue, company.currency) : "Multiple currencies" : "—"}</td><td>{company.ownerLabel}</td>
-          <td>{company.lastActivity ? <time dateTime={company.lastActivity}>{dateOnly(company.lastActivity, dateFormat)}</time> : "—"}</td><td>{company.nextActivity ? <time dateTime={company.nextActivity}>{dateOnly(company.nextActivity, dateFormat)}</time> : "—"}</td>
+          {selectedColumns.includes("company") && <td><div className="company-name-cell"><span aria-hidden="true" className="company-initials">{initials(company.name)}</span><div><Link href={`/app/companies/${company.id}`}><strong>{company.name}</strong></Link><small>{company.website?.replace(/^https?:\/\//, "") || "—"}</small></div></div></td>}
+          {selectedColumns.includes("industry") && <td>{company.industry || "—"}</td>}{selectedColumns.includes("contacts") && <td>{company.contactsCount}</td>}{selectedColumns.includes("open_deals") && <td>{company.openDealsCount}</td>}
+          {selectedColumns.includes("pipeline_value") && <td className="leads-amount">{company.openDealsCount ? company.currency ? money(company.openPipelineValue, company.currency) : "Multiple currencies" : "—"}</td>}{selectedColumns.includes("owner") && <td>{company.ownerLabel}</td>}
+          {selectedColumns.includes("last_activity") && <td>{company.lastActivity ? <time dateTime={company.lastActivity}>{dateOnly(company.lastActivity, dateFormat)}</time> : "—"}</td>}{selectedColumns.includes("next_activity") && <td>{company.nextActivity ? <time dateTime={company.nextActivity}>{dateOnly(company.nextActivity, dateFormat)}</time> : "—"}</td>}
           <td className="leads-row-action">{canEdit(company) ? <Link className="leads-edit-button" href={`/app/companies/${company.id}?edit=1`}>Edit</Link> : <span className="leads-read-only">View</span>}</td>
         </tr>)}</tbody></table></div>
-      {companies.length === 0 ? <div className="leads-empty"><Building2 aria-hidden="true" size={22} /><h2>{totalCount === 0 ? "No companies yet" : "No matching companies"}</h2><p>{totalCount === 0 ? "Add a company to keep its people and sales activity together." : "Try a different search or owner filter."}</p>{canCreate && totalCount === 0 && <button className="leads-secondary-button" onClick={() => setFormOpen(true)} type="button"><Plus size={14} />Add company</button>}</div> : <nav aria-label="Company pages" className="leads-pagination"><span>{matchedCount ? `${(page - 1) * companyPageSize + 1}–${Math.min(page * companyPageSize, matchedCount)} of ${matchedCount}` : "0 results"}</span><div><Link aria-disabled={page <= 1} className={page <= 1 ? "is-disabled" : ""} href={companyHref(search, ownerId, Math.max(1, page - 1))} aria-label="Previous page"><ChevronLeft size={16} />Previous</Link><Link aria-disabled={page >= lastPage} className={page >= lastPage ? "is-disabled" : ""} href={companyHref(search, ownerId, Math.min(lastPage, page + 1))} aria-label="Next page">Next<ChevronRight size={16} /></Link></div></nav>}
+      {companies.length === 0 ? <div className="leads-empty"><Building2 aria-hidden="true" size={22} /><h2>{totalCount === 0 ? "No companies yet" : "No matching companies"}</h2><p>{totalCount === 0 ? "Add a company to keep its people and sales activity together." : "Try a different search or owner filter."}</p>{canCreate && totalCount === 0 && <button className="leads-secondary-button" onClick={() => setFormOpen(true)} type="button"><Plus size={14} />Add company</button>}</div> : <nav aria-label="Company pages" className="leads-pagination"><span>{matchedCount ? `${(page - 1) * companyPageSize + 1}–${Math.min(page * companyPageSize, matchedCount)} of ${matchedCount}` : "0 results"}</span><div><Link aria-disabled={page <= 1} className={page <= 1 ? "is-disabled" : ""} href={companyHref(search, ownerId, sort, activeViewId, Math.max(1, page - 1))} aria-label="Previous page"><ChevronLeft size={16} />Previous</Link><Link aria-disabled={page >= lastPage} className={page >= lastPage ? "is-disabled" : ""} href={companyHref(search, ownerId, sort, activeViewId, Math.min(lastPage, page + 1))} aria-label="Next page">Next<ChevronRight size={16} /></Link></div></nav>}
     </section>
-    {formOpen && <CompanyForm owners={owners} onClose={() => setFormOpen(false)} />}
+    {canCreate && formOpen && <CompanyForm owners={owners} onClose={() => setFormOpen(false)} />}
   </main>;
 }
 
-function companyHref(search: string, owner: string, page: number) {
-  const params = new URLSearchParams(); if (search) params.set("q", search); if (owner) params.set("owner", owner); if (page > 1) params.set("page", String(page));
+function clearCompanyView(event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) {
+  const savedView = event.currentTarget.form?.elements.namedItem("view");
+  if (savedView instanceof HTMLSelectElement) savedView.value = "";
+}
+
+function companyHref(search: string, owner: string, sort: CompanyViewSort, viewId: string, page: number) {
+  const params = new URLSearchParams();
+  if (search) params.set("q", search);
+  if (owner) params.set("owner", owner);
+  if (sort !== "name_asc") params.set("sort", sort);
+  if (viewId) params.set("view", viewId);
+  if (page > 1) params.set("page", String(page));
   return `/app/companies${params.size ? `?${params.toString()}` : ""}`;
 }
 
@@ -95,7 +150,7 @@ function useCompanyDialog(onClose: () => void, pending: boolean) {
   return { dialogRef, onKeyDown };
 }
 
-function CompanyForm({ owners, company, canReassign, onClose }: { owners: CompanyOwner[]; company?: CompanyDetail["company"]; canReassign?: boolean; onClose: () => void }) {
+function CompanyForm({ owners, company, ownerLabel, canReassign, onClose }: { owners: CompanyOwner[]; company?: CompanyDetail["company"]; ownerLabel?: string; canReassign?: boolean; onClose: () => void }) {
   const action = company ? updateCompanyAction : createCompanyAction;
   const [state, formAction, pending] = useActionState(action, emptyState);
   useRefreshOnSuccess(state, onClose);
@@ -113,7 +168,7 @@ function CompanyForm({ owners, company, canReassign, onClose }: { owners: Compan
         <div className="leads-form-grid"><Field error={errors.city?.[0]} label="City" name="city" defaultValue={company?.city ?? ""} /><Field error={errors.state?.[0]} label="State / region" name="state" defaultValue={company?.state ?? ""} /></div>
         <div className="leads-form-grid"><Field error={errors.postalCode?.[0]} label="Postal code" name="postalCode" defaultValue={company?.postal_code ?? ""} /><Field error={errors.country?.[0]} label="Country" name="country" defaultValue={company?.country ?? ""} /></div>
         <label className="leads-field"><span>Description</span><textarea name="description" defaultValue={company?.description ?? ""} />{errors.description?.[0] && <small>{errors.description[0]}</small>}</label>
-        {canReassign ? <label className="leads-field"><span>Owner</span><select defaultValue={company?.owner_id ?? ""} name="ownerId"><option value="">Unassigned</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select></label> : company ? <><input name="ownerId" type="hidden" value={company.owner_id ?? ""} /><label className="leads-field"><span>Owner</span><input readOnly value={owners.find((owner) => owner.id === company.owner_id)?.label ?? "Assigned to you"} /></label></> : <input name="ownerId" type="hidden" value="" />}
+        {canReassign ? <label className="leads-field"><span>Owner</span><select defaultValue={company?.owner_id ?? ""} name="ownerId"><option value="">Unassigned</option>{company?.owner_id && !owners.some((owner) => owner.id === company.owner_id) && <option value={company.owner_id}>Current owner · Inactive user</option>}{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select></label> : company ? <><input name="ownerId" type="hidden" value={company.owner_id ?? ""} /><label className="leads-field"><span>Owner</span><input readOnly value={ownerLabel ?? owners.find((owner) => owner.id === company.owner_id)?.label ?? "Assigned to you"} /></label></> : <input name="ownerId" type="hidden" value="" />}
         {!company && state.duplicateMatches?.length ? <>
           <input name="confirmDuplicate" type="hidden" value="true" />
           <div aria-live="polite" className="csv-import-warning" role="status">
@@ -167,11 +222,11 @@ export function CompanyDetailWorkspace({ detail, owners, section, canEdit, canEd
     {normalizedSection === "Deals" && <section className="contact-section"><SectionTitle title="Deals" />{deals.length ? <ul className="company-record-list">{deals.map((deal) => <li key={deal.id}><div><strong>{deal.title}</strong><small>{deal.stage?.name ?? deal.status} · {deal.expected_close_date ? dateOnly(deal.expected_close_date, dateFormat) : "No close date"}</small></div><span>{money(Number(deal.amount), deal.currency)}</span></li>)}</ul> : <EmptyDetail text="No deals are linked to this company." />}</section>}
     {normalizedSection === "Activity" && <><section className="contact-section"><SectionTitle title="Activity" />{activities.length ? <ActivityList activities={activities} dateFormat={dateFormat} /> : <EmptyDetail text="No company activity has been recorded." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="activity" />}</>}
     {normalizedSection === "Tasks" && <><section className="contact-section"><SectionTitle title="Tasks" />{tasks.length ? <TaskList tasks={tasks} companyId={company.id} canComplete={canEdit} currentUserId={currentUserId} action={doneAction} pending={completing} dateFormat={dateFormat} /> : <EmptyDetail text="No tasks are linked to this company." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="task" owners={owners} canReassign={canReassign} currentUserId={currentUserId} />}</>}
-    {normalizedSection === "Notes" && <><section className="contact-section"><SectionTitle title="Notes" />{notes.length ? <ul className="company-notes">{notes.map((note) => <li key={note.id}><p>{note.body}</p><div><time dateTime={note.created_at}>{dateTime(note.created_at, dateFormat)}</time>{note.is_pinned && <span aria-label="Pinned" className="contact-note-pinned"><Pin aria-hidden="true" size={12} />Pinned</span>}{canEdit && (canEditAll || note.created_by === currentUserId) && <CompanyNotePinControl companyId={company.id} note={note} />}</div></li>)}</ul> : <EmptyDetail text="No notes have been added." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="note" />}</>}
+    {normalizedSection === "Notes" && <><section className="contact-section"><SectionTitle title="Notes" />{notes.length ? <ul className="company-notes">{notes.map((note) => <li key={note.id}><p>{note.body}</p><div><time dateTime={note.created_at}>{dateTime(note.created_at, dateFormat)}</time>{note.is_pinned && <span aria-label="Pinned" className="contact-note-pinned"><Pin aria-hidden="true" size={12} />Pinned</span>}{canEdit && (canEditAll || note.created_by === currentUserId) && <CompanyNotePinControl companyId={company.id} note={note} />}{canEdit && (canEditAll || note.created_by === currentUserId) && <NoteEditDeleteControls deleteAction={deleteCompanyNoteAction} entityId={company.id} entityIdName="companyId" note={note} updateAction={updateCompanyNoteAction} />}</div></li>)}</ul> : <EmptyDetail text="No notes have been added." />}</section>{canEdit && <EngagementForm companyId={company.id} kind="note" />}</>}
     {normalizedSection === "Files" && <section className="contact-section"><SectionTitle title="Files" />{attachments.length ? <ul className="contact-file-list">{attachments.map((file) => <li key={file.id}><div><strong>{file.filename}</strong><small>{(file.size_bytes / 1024).toFixed(0)} KB · {dateOnly(file.created_at, dateFormat)}</small></div><Link className="leads-secondary-button" href={`/app/companies/files/${file.id}`}>Download</Link></li>)}</ul> : <EmptyDetail text="No files have been uploaded." />}{canEdit && <FileUpload companyId={company.id} />}</section>}
     </div>
     <aside aria-label="Company details" className="contact-detail-rail"><section className="contact-rail-section"><SectionTitle title="Company properties" /><dl className="company-rail-properties"><Property label="Industry" value={company.industry} /><Property label="Employees" value={employeeBand(company.employee_size)} /><Property label="Phone" value={company.phone} /><Property label="Address" value={[company.address_line_1, company.address_line_2, company.city, company.state, company.postal_code, company.country].filter(Boolean).join(", ") || null} /><Property label="Website" value={company.website} /></dl></section><section className="contact-rail-section"><SectionTitle title="Key contacts" />{keyContacts.length ? <ul className="company-key-contacts">{keyContacts.map((contact) => <li key={contact.id}><Link href={`/app/contacts/${contact.id}`}><strong>{contact.first_name} {contact.last_name}</strong><small>{contact.job_title || contact.email}</small></Link></li>)}</ul> : <EmptyDetail text="No key contacts available." />}</section><section className="contact-rail-section"><SectionTitle title="Next task" />{nextTask ? <div className="company-next-task"><strong>{nextTask.title}</strong><span><CalendarClock size={14} />{dateTime(nextTask.due_at, dateFormat)}</span></div> : <EmptyDetail text="No upcoming tasks." />}</section></aside></div>
-    {editing && <CompanyForm company={company} owners={owners} canReassign={canReassign} onClose={() => setEditing(false)} />}
+    {editing && <CompanyForm company={company} ownerLabel={detail.ownerLabel} owners={owners} canReassign={canReassign} onClose={() => setEditing(false)} />}
     {confirmArchive && <ArchiveConfirmation company={company} state={archiveState} action={archiveAction} pending={archiving} onClose={() => setConfirmArchive(false)} />}
   </main>;
 }

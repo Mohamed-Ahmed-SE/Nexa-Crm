@@ -7,8 +7,15 @@ describe("contactInputSchema", () => {
   it("requires valid names and normalizes optional blanks", () => {
     expect(contactInputSchema.safeParse({ firstName: " ", lastName: "Chen", lifecycleStatus: "active" }).success).toBe(false);
     expect(contactInputSchema.parse({ firstName: " Sarah ", lastName: " Chen ", lifecycleStatus: "customer", email: "", companyId: "" })).toMatchObject({
-      firstName: "Sarah", lastName: "Chen", email: null, companyId: null, ownerId: null, phone: null,
+      firstName: "Sarah", lastName: "Chen", email: null, companyId: null, ownerId: null, phone: null, address: null,
     });
+  });
+
+  it("trims multiline addresses, normalizes blanks, and enforces the 500-character limit", () => {
+    expect(contactInputSchema.parse({ firstName: "A", lastName: "B", lifecycleStatus: "active", address: "  12 Market St\nSuite 4  " }).address).toBe("12 Market St\nSuite 4");
+    expect(contactInputSchema.parse({ firstName: "A", lastName: "B", lifecycleStatus: "active", address: "  \t " }).address).toBeNull();
+    expect(contactInputSchema.safeParse({ firstName: "A", lastName: "B", lifecycleStatus: "active", address: "x".repeat(501) }).success).toBe(false);
+    expect(contactInputSchema.parse({ firstName: "A", lastName: "B", lifecycleStatus: "active", address: "x".repeat(500) }).address).toHaveLength(500);
   });
 
   it("rejects invalid IDs, lifecycle values, and malformed links", () => {

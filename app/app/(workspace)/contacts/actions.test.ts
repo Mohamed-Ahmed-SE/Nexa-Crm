@@ -87,6 +87,7 @@ describe("create contact duplicate warning", () => {
       last_name: "Lee Jr.",
       email: "JORDAN@example.test",
       phone: "+1 415-555-0100",
+      address: null,
       job_title: null,
       company_id: null,
       owner_id: userId,

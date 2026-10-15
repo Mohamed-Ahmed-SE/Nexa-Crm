@@ -81,20 +81,28 @@ Use the same design language as the app:
 
 # 2. Onboarding
 
-Multi-step contained card.
+Onboarding has two phases rather than one continuous wizard/card.
 
-Steps:
-1. Workspace details
-2. Your role
-3. Pipeline template
-4. Optional import
-5. Invite teammates
-6. Done
+## Initial workspace-creation wizard
 
-Progress indicator should be compact.
+Show a compact progress indicator for these four steps:
+1. Welcome
+2. Workspace name (required)
+3. User role/job title (optional)
+4. Choose a pipeline template
 
-Primary action is dark/brand-emphasis.
-Secondary actions remain neutral outline/text.
+The pipeline template step can be skipped; Standard Sales is selected by default. The primary action creates the workspace after this step.
+
+## Post-creation optional setup handoff
+
+Only after successful workspace creation, show a separate handoff with:
+5. Import a CSV (optional link to `/app/data-import`)
+6. Invite teammates (optional link to `/app/settings/users`)
+7. Enter dashboard (completion action linking to `/app/dashboard`)
+
+Both setup links remain optional. Provide a direct “Skip optional setup and go to dashboard” action linking to `/app/dashboard`, so users can complete onboarding without importing data or inviting teammates.
+
+Primary actions use dark/brand emphasis. Secondary and skip actions remain neutral outline/text.
 
 ---
 

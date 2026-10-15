@@ -8,6 +8,7 @@ import { createClient } from "@supabase/supabase-js";
 import { waitForResponse, withNextServer } from "./next-server.mjs";
 
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1"]);
+const adminUser = { id: "00000000-0000-4000-8000-000000000101", email: "avery.stone@northstar-demo.example" };
 const manager = { id: "00000000-0000-4000-8000-000000000102", email: "maya.hassan@northstar-demo.example" };
 const member = { id: "00000000-0000-4000-8000-000000000103", email: "omar.nabil@northstar-demo.example" };
 const viewer = { id: "00000000-0000-4000-8000-000000000105", email: "sam.reed@northstar-demo.example" };
@@ -47,7 +48,7 @@ function createSupabase(apiUrl, key) {
 }
 
 async function provisionUsers(admin, password) {
-  for (const { id } of [manager, member, viewer]) {
+  for (const { id } of [adminUser, manager, member, viewer]) {
     const { error } = await admin.auth.admin.updateUserById(id, { password, email_confirm: true });
     if (error) throw new Error("Could not provision seeded users through the local Auth admin API.");
   }
@@ -156,7 +157,7 @@ test("manager completes authenticated CRM journeys with persisted local outcomes
 
       await page.getByRole("button", { name: "Search CRM" }).click();
       await page.getByRole("searchbox", { name: "Search this workspace" }).fill(data.leadName);
-      const globalLeadResult = page.getByRole("region", { name: "Leads" }).getByRole("link", { name: new RegExp(data.leadName) });
+      const globalLeadResult = page.getByRole("dialog").getByRole("region", { name: "Leads" }).getByRole("link", { name: new RegExp(data.leadName) });
       await globalLeadResult.waitFor();
       await globalLeadResult.click();
       await page.waitForURL(`${origin}/app/leads/${lead.id}`);
@@ -292,7 +293,7 @@ test("manager completes authenticated CRM journeys with persisted local outcomes
         .eq("created_by", manager.id).eq("entity", "leads");
       assert.ifError(historyBeforeImport.error);
       const previousHistoryIds = new Set((historyBeforeImport.data ?? []).map(({ id }) => id));
-      await page.getByRole("button", { name: "Import 1 rows" }).click();
+      await page.getByRole("button", { name: "Import 1 valid row" }).click();
       await page.getByRole("heading", { name: "Import summary" }).waitFor();
       const importedLead = await rowBy(admin, "leads", "full_name", data.importedLeadName);
       assert.equal(importedLead.email, `import-${runId}@example.invalid`);
@@ -330,6 +331,178 @@ test("manager completes authenticated CRM journeys with persisted local outcomes
       catch (cleanupError) {
         if (!testError) testError = cleanupError;
       }
+    }
+  }
+  if (testError) throw testError;
+});
+
+test("unauthenticated protected workspace requests redirect to sign-in when Supabase is configured", { timeout: timeoutMs }, async () => {
+  const { apiUrl, anonKey, serviceRoleKey } = getLocalSupabaseConfig();
+  await withNextServer({ NEXT_PUBLIC_SUPABASE_URL: apiUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey }, async ({ child, origin }) => {
+    await waitForResponse(child, origin, "/auth/sign-in", 200);
+    const response = await fetch(`${origin}/app/leads`, { redirect: "manual", signal: AbortSignal.timeout(5_000) });
+    assert.ok([302, 303, 307, 308].includes(response.status), "protected route should return a redirect without a session");
+    assert.equal(new URL(response.headers.get("location"), origin).pathname, "/auth/sign-in");
+  }, [anonKey, serviceRoleKey]);
+});
+
+test("deactivated members cannot use workspace routes and retain their original status after the test", { timeout: timeoutMs }, async () => {
+  const { apiUrl, anonKey, serviceRoleKey } = getLocalSupabaseConfig();
+  const admin = createSupabase(apiUrl, serviceRoleKey);
+  const ephemeralPassword = randomBytes(32).toString("base64url");
+  const { data: membership, error: membershipError } = await admin.from("workspace_members").select("status")
+    .eq("workspace_id", workspaceId).eq("user_id", member.id).single();
+  assert.ifError(membershipError);
+  let browser;
+  let testError;
+  try {
+    await provisionUsers(admin, ephemeralPassword);
+    const { error: deactivateError } = await admin.from("workspace_members").update({ status: "deactivated" })
+      .eq("workspace_id", workspaceId).eq("user_id", member.id);
+    assert.ifError(deactivateError);
+    await withNextServer({ NEXT_PUBLIC_SUPABASE_URL: apiUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey }, async ({ child, origin }) => {
+      await waitForResponse(child, origin, "/auth/sign-in", 200);
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(`${origin}/auth/sign-in`);
+      await page.getByRole("textbox", { name: "Email" }).fill(member.email);
+      await page.getByRole("textbox", { name: "Password" }).fill(ephemeralPassword);
+      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.waitForURL((url) => url.pathname === "/onboarding" || url.pathname.startsWith("/app/"), { timeout: 30_000 });
+      const protectedResponse = await page.goto(`${origin}/app/leads`);
+      assert.ok(protectedResponse && protectedResponse.status() < 400, "deactivated user should be redirected to an accessible non-workspace page");
+      assert.equal(new URL(page.url()).pathname, "/onboarding", "deactivated member must not remain on a workspace route");
+      await assert.rejects(page.getByRole("heading", { name: "Leads", exact: true }).waitFor({ state: "visible", timeout: 1_000 }));
+      await context.close();
+    }, [anonKey, serviceRoleKey, ephemeralPassword]);
+  } catch (error) {
+    testError = error;
+  } finally {
+    if (browser) {
+      try { await browser.close(); }
+      catch (closeError) { if (!testError) testError = closeError; }
+    }
+    const { error: restoreError } = await admin.from("workspace_members").update({ status: membership.status })
+      .eq("workspace_id", workspaceId).eq("user_id", member.id);
+    if (restoreError && !testError) testError = new Error("Could not restore the seeded member's original workspace status.");
+    const { data: restoredMembership, error: verifyError } = await admin.from("workspace_members").select("status")
+      .eq("workspace_id", workspaceId).eq("user_id", member.id).single();
+    if ((verifyError || restoredMembership.status !== membership.status) && !testError) {
+      testError = new Error("Seeded member's original workspace status was not restored.");
+    }
+  }
+  if (testError) throw testError;
+});
+
+test("only a seeded admin can access workspace user administration", { timeout: timeoutMs }, async () => {
+  const { apiUrl, anonKey, serviceRoleKey } = getLocalSupabaseConfig();
+  const admin = createSupabase(apiUrl, serviceRoleKey);
+  const ephemeralPassword = randomBytes(32).toString("base64url");
+  let browser;
+  let testError;
+  try {
+    await provisionUsers(admin, ephemeralPassword);
+    await withNextServer({ NEXT_PUBLIC_SUPABASE_URL: apiUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey }, async ({ child, origin }) => {
+      await waitForResponse(child, origin, "/auth/sign-in", 200);
+      browser = await chromium.launch({ headless: true });
+      const memberContext = await browser.newContext();
+      const memberPage = await memberContext.newPage();
+      await login(memberPage, origin, member.email, ephemeralPassword);
+      const deniedResponse = await memberPage.goto(`${origin}/app/settings/users`);
+      assert.equal(deniedResponse?.status(), 404, "normal member should receive the not-found response for user administration");
+      await assert.rejects(memberPage.getByRole("heading", { name: "Workspace access", exact: true }).waitFor({ state: "visible", timeout: 1_000 }));
+      await memberContext.close();
+
+      const adminContext = await browser.newContext();
+      const adminPage = await adminContext.newPage();
+      await login(adminPage, origin, adminUser.email, ephemeralPassword);
+      const allowedResponse = await adminPage.goto(`${origin}/app/settings/users`);
+      assert.equal(allowedResponse?.status(), 200, "seeded admin should load workspace user administration");
+      await adminPage.getByRole("heading", { name: "Workspace access", exact: true }).waitFor();
+      await adminPage.getByRole("heading", { name: "Invite a teammate", exact: true }).waitFor();
+      await adminContext.close();
+    }, [anonKey, serviceRoleKey, ephemeralPassword]);
+  } catch (error) {
+    testError = error;
+  } finally {
+    if (browser) await browser.close();
+  }
+  if (testError) throw testError;
+});
+
+test("workspace records stay hidden across tenants even with a forged workspace selection cookie", { timeout: timeoutMs }, async () => {
+  const { apiUrl, anonKey, serviceRoleKey } = getLocalSupabaseConfig();
+  const admin = createSupabase(apiUrl, serviceRoleKey);
+  const ephemeralPassword = randomBytes(32).toString("base64url");
+  const runId = randomBytes(8).toString("hex");
+  const marker = `E2E isolated marker ${runId}`;
+  const temporaryUserEmail = `e2e-workspace-${runId}@example.invalid`;
+  let temporaryUserId;
+  let temporaryWorkspaceId;
+  let temporaryLeadId;
+  let browser;
+  let testError;
+  try {
+    await provisionUsers(admin, ephemeralPassword);
+    const { data: createdUser, error: userError } = await admin.auth.admin.createUser({
+      email: temporaryUserEmail, password: ephemeralPassword, email_confirm: true, user_metadata: { full_name: `E2E workspace ${runId}` },
+    });
+    if (userError || !createdUser.user) throw new Error("Could not create the temporary user on local Supabase.");
+    temporaryUserId = createdUser.user.id;
+    const { data: createdWorkspace, error: workspaceError } = await admin.from("workspaces")
+      .insert({ name: `E2E Workspace ${runId}`, slug: `e2e-workspace-${runId}` }).select("id").single();
+    if (workspaceError || !createdWorkspace) throw new Error("Could not create the temporary second workspace on local Supabase.");
+    temporaryWorkspaceId = createdWorkspace.id;
+    const { error: memberError } = await admin.from("workspace_members")
+      .insert({ workspace_id: temporaryWorkspaceId, user_id: temporaryUserId, role: "admin", status: "active" });
+    if (memberError) throw new Error("Could not add the temporary user to the second workspace.");
+    const { data: createdLead, error: leadError } = await admin.from("leads").insert({
+      workspace_id: temporaryWorkspaceId, full_name: marker, currency: "USD", created_by: temporaryUserId,
+    }).select("id").single();
+    if (leadError || !createdLead) throw new Error("Could not create a real marker lead in the second workspace.");
+    temporaryLeadId = createdLead.id;
+
+    const memberClient = createSupabase(apiUrl, anonKey);
+    const { error: signInError } = await memberClient.auth.signInWithPassword({ email: manager.email, password: ephemeralPassword });
+    assert.ifError(signInError);
+    const { data: hiddenRows, error: selectError } = await memberClient.from("leads").select("id,full_name")
+      .eq("workspace_id", temporaryWorkspaceId).eq("id", temporaryLeadId);
+    assert.ifError(selectError);
+    assert.deepEqual(hiddenRows, [], "Workspace A's authenticated API must not expose Workspace B's actual marker record");
+
+    await withNextServer({ NEXT_PUBLIC_SUPABASE_URL: apiUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: anonKey }, async ({ child, origin }) => {
+      await waitForResponse(child, origin, "/auth/sign-in", 200);
+      browser = await chromium.launch({ headless: true });
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await login(page, origin, manager.email, ephemeralPassword);
+      await context.addCookies([{ name: "nexa-workspace", value: temporaryWorkspaceId, url: origin }]);
+      await page.goto(`${origin}/app/leads`);
+      await page.getByRole("heading", { name: "Leads", exact: true }).waitFor();
+      assert.doesNotMatch(await page.locator("body").innerText(), new RegExp(marker));
+      await page.goto(`${origin}/app/leads/${temporaryLeadId}`);
+      assert.doesNotMatch(await page.locator("body").innerText(), new RegExp(marker), "forged workspace selection must not reveal the other workspace's record");
+      await context.close();
+    }, [anonKey, serviceRoleKey, ephemeralPassword]);
+  } catch (error) {
+    testError = error;
+  } finally {
+    if (browser) {
+      try { await browser.close(); }
+      catch (closeError) { if (!testError) testError = closeError; }
+    }
+    if (temporaryWorkspaceId) {
+      const { error: workspaceCleanupError } = await admin.from("workspaces").delete().eq("id", temporaryWorkspaceId);
+      if (workspaceCleanupError && !testError) testError = new Error("Could not clean up the temporary E2E workspace and its records.");
+    }
+    if (temporaryLeadId) {
+      const { error: leadCleanupError } = await admin.from("leads").delete().eq("id", temporaryLeadId);
+      if (leadCleanupError && !testError) testError = new Error("Could not clean up the temporary E2E marker record.");
+    }
+    if (temporaryUserId) {
+      const { error: userCleanupError } = await admin.auth.admin.deleteUser(temporaryUserId);
+      if (userCleanupError && !testError) testError = new Error("Could not clean up the temporary E2E Auth user.");
     }
   }
   if (testError) throw testError;

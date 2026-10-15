@@ -5,6 +5,9 @@ import type { WorkspaceDashboardData } from "@/lib/dashboard/types";
 const dashboardFixture: WorkspaceDashboardData = {
   currency: "USD",
   timeZone: "UTC",
+  monthStart: "2026-04-01T00:00:00.000Z",
+  monthEnd: "2026-05-01T00:00:00.000Z",
+  now: "2026-04-15T12:00:00.000Z",
   today: "2026-04-15",
   stages: [
     { id: "stage-open", name: "Discovery", pipelineId: "pipeline-main", pipelineName: "Sales", position: 1, stageType: "open" },
@@ -21,6 +24,12 @@ const dashboardFixture: WorkspaceDashboardData = {
     { id: "lead-apr", createdAt: "2026-04-02T10:00:00.000Z", source: "Web" },
     { id: "lead-mar", createdAt: "2026-03-31T23:59:59.000Z", source: "Email" },
   ],
+  leadAttentionCandidates: [
+    { id: "stale-lead", fullName: "Stale Lead", status: "qualified", createdAt: "2026-04-01T12:00:00.000Z" },
+    { id: "recent-lead", fullName: "Recent Lead", status: "contacted", createdAt: "2026-03-01T12:00:00.000Z" },
+    { id: "new-lead", fullName: "New Lead", status: "new", createdAt: "2026-04-02T12:00:00.000Z" },
+  ],
+  leadActivities: [{ leadId: "recent-lead", occurredAt: "2026-04-14T12:00:00.000Z" }],
   tasks: [
     { id: "today-task", title: "Call today", dueAt: "2026-04-15T16:00:00.000Z", priority: "high", relatedTo: "Open current", relatedId: "open-1", relatedHref: "/app/deals/open-1" },
     { id: "overdue", title: "Late task", dueAt: "2026-04-14T16:00:00.000Z", priority: "medium", relatedTo: null, relatedId: null, relatedHref: null },
@@ -43,6 +52,7 @@ describe("shapeWorkspaceDashboard", () => {
     expect(dashboardSummary.dealsBySource).toEqual([{ name: "Referral", count: 3 }, { name: "Web", count: 1 }, { name: "Other", count: 1 }]);
     expect(dashboardSummary.tasksToday.map(({ id }) => id)).toEqual(["today-task"]);
     expect(dashboardSummary.attentionDeals.map(({ deal }) => deal.id)).toEqual(["past-close", "other-currency", "stale"]);
+    expect(dashboardSummary.attentionLeads.map(({ id }) => id)).toEqual(["stale-lead"]);
   });
 
   // Cases: one second before local month/day starts, exact local day starts, the final second before next day, and the exact next-day boundary catch DST off-by-one errors.
@@ -80,8 +90,8 @@ describe("shapeWorkspaceDashboard", () => {
   });
 
   it("returns honest zeros and empty collections for a workspace with no records", () => {
-    const emptySummary = shapeWorkspaceDashboard({ ...dashboardFixture, deals: [], leads: [], tasks: [], activities: [] }, now);
-    expect(emptySummary).toMatchObject({ pipelineValue: 0, openDeals: 0, newLeads: 0, wonRevenue: 0, overdueTasks: 0, closingThisMonth: 0, tasksToday: [], attentionDeals: [], dealsBySource: [] });
+    const emptySummary = shapeWorkspaceDashboard({ ...dashboardFixture, deals: [], leads: [], leadAttentionCandidates: [], leadActivities: [], tasks: [], activities: [] }, now);
+    expect(emptySummary).toMatchObject({ pipelineValue: 0, openDeals: 0, newLeads: 0, wonRevenue: 0, overdueTasks: 0, closingThisMonth: 0, tasksToday: [], attentionDeals: [], attentionLeads: [], dealsBySource: [] });
     expect(emptySummary.pipelineByStage).toEqual([{ id: "stage-open", name: "Discovery", pipelineName: "Sales", count: 0, value: 0 }]);
   });
 });

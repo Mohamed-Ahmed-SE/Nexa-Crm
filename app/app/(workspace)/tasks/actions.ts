@@ -37,6 +37,7 @@ export async function createTaskAction(_previous: TaskActionState, form: FormDat
   });
   if (error) return { message: "Unable to create this task. Check that the related record is available to you." };
   revalidatePath("/app/tasks");
+  if (parsed.data.relatedType === "lead" && parsed.data.relatedId) revalidatePath(`/app/leads/${parsed.data.relatedId}`);
   return { ok: true, message: "Task created." };
 }
 
@@ -126,7 +127,7 @@ async function validRelation(supabase: NonNullable<Awaited<ReturnType<typeof cre
   let query = supabase.from(table).select("id,owner_id,status").eq("workspace_id", workspaceId).eq("id", id).is("archived_at", null);
   if (type === "deal") query = query.eq("status", "open");
   const { data, error } = await query.maybeSingle();
-  return !error && Boolean(data) && (canReassign || ((type === "company" || type === "contact") && data?.owner_id === userId));
+  return !error && Boolean(data) && (canReassign || ((type === "company" || type === "contact" || type === "lead") && data?.owner_id === userId));
 }
 
 async function isRelationOwnedBy(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, workspaceId: string, userId: string, type: string, id: string) {

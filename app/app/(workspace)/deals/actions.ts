@@ -4,10 +4,10 @@ import { revalidatePath } from "next/cache";
 import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
 import { dealIdSchema, dealInputSchema, lostDealOutcomeSchema, reopenDealOutcomeSchema, stageIdSchema, wonDealOutcomeSchema } from "@/lib/deals/schema";
-import { getDealForEdit, insertDeal, updateDeal } from "@/lib/deals/repository";
+import { getDealForEdit, insertDeal, replaceDealTags, updateDeal } from "@/lib/deals/repository";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-export type DealActionResult = { ok: boolean; message: string; fieldErrors?: Record<string, string[]> };
+export type DealActionResult = { ok: boolean; message: string; fieldErrors?: Record<string, string[]>; tagWarning?: boolean };
 const failure = (message: string, fieldErrors?: Record<string, string[]>): DealActionResult => ({ ok: false, message, fieldErrors });
 const textValue = (formData: FormData, key: string) => {
   const formEntry = formData.get(key);
@@ -17,8 +17,15 @@ function parseForm(formData: FormData) {
   return dealInputSchema.safeParse({
     title: textValue(formData, "title"), companyId: textValue(formData, "companyId"), contactId: textValue(formData, "contactId"),
     amount: textValue(formData, "amount"), expectedCloseDate: textValue(formData, "expectedCloseDate"), ownerId: textValue(formData, "ownerId"),
-    priority: textValue(formData, "priority"), description: textValue(formData, "description"), pipelineId: textValue(formData, "pipelineId"),
+    priority: textValue(formData, "priority"), description: textValue(formData, "description"), tagIds: formData.getAll("tagIds"), pipelineId: textValue(formData, "pipelineId"),
   });
+}
+
+async function verifyTagIds(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, workspaceId: string, tagIds: string[]) {
+  if (!tagIds.length) return true;
+  const { data, error } = await supabase.from("tags").select("id").eq("workspace_id", workspaceId).in("id", tagIds);
+  const verifiedIds = new Set((data ?? []).map(({ id }: { id: string }) => id));
+  return !error && verifiedIds.size === tagIds.length && tagIds.every((tagId) => verifiedIds.has(tagId));
 }
 
 async function verifyRelations(supabase: NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>, workspaceId: string, companyId: string | null, contactId: string | null) {
@@ -66,7 +73,7 @@ async function insertDealCopy({ supabase, context, source, stageId }: {
   });
   if (error || !createdDeal) return failure("Deal could not be duplicated. Check your access and try again.");
   revalidateDeal(createdDeal.id);
-  const logged = await logDealActivity({ supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: createdDeal.id, activityType: "record_created", subject: "Deal duplicated", body: null });
+  const logged = await logDealActivity({ supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: createdDeal.id, activityType: "record_created", subject: "Deal duplicated", body: null, metadata: { to_stage_id: stageId } });
   return { ok: true, message: logged ? "Deal duplicated." : "Deal duplicated, but its activity could not be recorded." };
 }
 
@@ -92,6 +99,7 @@ export async function createDealAction(formData: FormData): Promise<DealActionRe
   if (!parsed.success) return failure("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
   const supabase = await createSupabaseServerClient();
   if (!supabase) return failure("Authentication is not configured.");
+  if (!await verifyTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return failure("Choose tags from this workspace.");
   if (!await verifyRelations(supabase, context.workspaceId, parsed.data.companyId, parsed.data.contactId)) return failure("Choose a company and contact from this workspace, with a matching company.");
   const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
   const ownerId = canReassign ? parsed.data.ownerId : context.userId;
@@ -104,8 +112,10 @@ export async function createDealAction(formData: FormData): Promise<DealActionRe
   if (workspaceError || !workspace) return failure("Unable to verify workspace currency.");
   const { data: createdDeal, error } = await insertDeal(supabase, context.workspaceId, context.userId, pipeline.id, stage.id, workspace.default_currency, { ...parsed.data, ownerId });
   if (error || !createdDeal) return failure("Deal could not be created. Check your access and try again.");
+  const tagsSaved = !parsed.data.tagIds.length || await replaceDealTags(supabase, context.workspaceId, createdDeal.id, parsed.data.tagIds);
   revalidateDeal(createdDeal.id);
-  const logged = await logDealActivity({ supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: createdDeal.id, activityType: "record_created", subject: "Deal created", body: null });
+  const logged = await logDealActivity({ supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: createdDeal.id, activityType: "record_created", subject: "Deal created", body: null, metadata: { to_stage_id: stage.id } });
+  if (!tagsSaved) return { ok: true, message: "Deal added, but its tags could not be saved. Edit the deal to try again.", tagWarning: true };
   return { ok: true, message: logged ? "Deal added." : "Deal added, but its activity could not be recorded." };
 }
 
@@ -117,6 +127,7 @@ export async function updateDealAction(formData: FormData): Promise<DealActionRe
   if (!parsed.success) return failure("Check the highlighted fields.", parsed.error.flatten().fieldErrors);
   const supabase = await createSupabaseServerClient();
   if (!supabase) return failure("Authentication is not configured.");
+  if (!await verifyTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return failure("Choose tags from this workspace.");
   const { data: current, error } = await getDealForEdit(supabase, context.workspaceId, id.data);
   if (error || !current) return failure("Deal not found in this workspace.");
   if (current.status !== "open") return failure("Closed deals cannot be edited in this slice.");
@@ -129,12 +140,14 @@ export async function updateDealAction(formData: FormData): Promise<DealActionRe
   const { data: updated, error: updateError } = await updateDeal(supabase, context.workspaceId, id.data, { ...parsed.data, ownerId: parsed.data.ownerId });
   if (updateError) return failure("Deal could not be updated. Check your access and try again.");
   if (!updated) return failure("Deal not found or no longer editable.");
+  const tagsSaved = await replaceDealTags(supabase, context.workspaceId, id.data, parsed.data.tagIds);
   revalidateDeal(id.data);
   const activitiesLogged = await logDealUpdateActivities({
     supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: id.data,
     previousValues: { ownerId: current.owner_id, amount: current.amount, currency: current.currency },
     nextValues: { ownerId: parsed.data.ownerId, amount: parsed.data.amount },
   });
+  if (!tagsSaved) return failure("Deal details were updated, but tags could not be saved. Existing tags were retained where possible.");
   return {
     ok: true,
     message: activitiesLogged ? "Deal updated." : "Deal updated, but an activity could not be recorded.",
@@ -252,7 +265,7 @@ export async function markDealWonAction(formData: FormData): Promise<DealActionR
     .eq("workspace_id", editable.context.workspaceId).eq("id", editable.deal.id).eq("status", "open").is("archived_at", null).select("id").maybeSingle();
   if (error || !updated) return failure("The deal could not be marked won. Refresh and try again.");
   revalidateDeal(editable.deal.id);
-  const logged = await logDealActivity({ supabase: editable.supabase, workspaceId: editable.context.workspaceId, userId: editable.context.userId, dealId: editable.deal.id, activityType: "deal_won", subject: "Deal marked won", body: parsed.data.note ?? null });
+  const logged = await logDealActivity({ supabase: editable.supabase, workspaceId: editable.context.workspaceId, userId: editable.context.userId, dealId: editable.deal.id, activityType: "deal_won", subject: "Deal marked won", body: parsed.data.note ?? null, metadata: { from_stage_id: editable.deal.stage_id, to_stage_id: stage.id } });
   return { ok: true, message: logged ? "Deal marked won." : "Deal marked won, but its activity could not be recorded." };
 }
 
@@ -272,7 +285,7 @@ export async function markDealLostAction(formData: FormData): Promise<DealAction
   revalidateDeal(editable.deal.id);
   const tasksHandled = await handleLostTasks({ supabase: editable.supabase, workspaceId: editable.context.workspaceId, dealId: editable.deal.id, choice: parsed.data.taskChoice });
   const details = [`Lost reason: ${reason.name}`, parsed.data.competitor ? `Competitor: ${parsed.data.competitor}` : null, parsed.data.note ? `Closing note: ${parsed.data.note}` : null].filter(Boolean).join("\n");
-  const logged = await logDealActivity({ supabase: editable.supabase, workspaceId: editable.context.workspaceId, userId: editable.context.userId, dealId: editable.deal.id, activityType: "deal_lost", subject: "Deal marked lost", body: details });
+  const logged = await logDealActivity({ supabase: editable.supabase, workspaceId: editable.context.workspaceId, userId: editable.context.userId, dealId: editable.deal.id, activityType: "deal_lost", subject: "Deal marked lost", body: details, metadata: { from_stage_id: editable.deal.stage_id, to_stage_id: stage.id } });
   const warning = [!tasksHandled ? "Related tasks could not all be updated." : null, !logged ? "Activity could not be recorded." : null].filter(Boolean).join(" ");
   return { ok: true, message: warning ? `Deal marked lost. ${warning}` : "Deal marked lost." };
 }
@@ -289,7 +302,7 @@ export async function reopenDealAction(formData: FormData): Promise<DealActionRe
     .eq("workspace_id", editable.context.workspaceId).eq("id", editable.deal.id).neq("status", "open").is("archived_at", null).select("id").maybeSingle();
   if (error || !updated) return failure("The deal could not be reopened. Refresh and try again.");
   revalidateDeal(editable.deal.id);
-  const logged = await logDealActivity({ supabase: editable.supabase, workspaceId: editable.context.workspaceId, userId: editable.context.userId, dealId: editable.deal.id, activityType: "deal_reopened", subject: "Deal reopened", body: null });
+  const logged = await logDealActivity({ supabase: editable.supabase, workspaceId: editable.context.workspaceId, userId: editable.context.userId, dealId: editable.deal.id, activityType: "deal_reopened", subject: "Deal reopened", body: null, metadata: { from_stage_id: editable.deal.stage_id, to_stage_id: stage.id } });
   return { ok: true, message: logged ? "Deal reopened." : "Deal reopened, but its activity could not be recorded." };
 }
 
@@ -310,7 +323,22 @@ export async function moveDealStageAction(dealId: string, expectedStageId: strin
   const { data: moved, error: moveError } = await supabase.from("deals").update({ stage_id: target.id }).eq("workspace_id", context.workspaceId).eq("id", current.id).eq("stage_id", sourceStage.data).eq("status", "open").is("archived_at", null).select("id").maybeSingle();
   if (moveError || !moved) return failure("The deal could not be moved. Its previous stage has been kept.");
   revalidateDeal(current.id);
-  const logged = await logDealActivity({ supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: current.id, activityType: "stage_changed", subject: `Stage changed to ${target.name}`, body: null });
+  const logged = await logDealActivity({ supabase, workspaceId: context.workspaceId, userId: context.userId, dealId: current.id, activityType: "stage_changed", subject: `Stage changed to ${target.name}`, body: null, metadata: { from_stage_id: sourceStage.data, to_stage_id: target.id } });
   return { ok: true, message: logged ? "Deal moved." : "Deal moved, but its activity could not be recorded." };
+}
+
+export async function archiveDealAction(formData: FormData): Promise<DealActionResult> {
+  const context = await requirePermission("crm.archive");
+  const parsedId = dealIdSchema.safeParse(textValue(formData, "id"));
+  if (!parsedId.success) return failure("This deal could not be identified.");
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return failure("Authentication is not configured.");
+  const { data: archivedDeal, error } = await supabase.from("deals").update({ archived_at: new Date().toISOString() })
+    .eq("workspace_id", context.workspaceId).eq("id", parsedId.data).is("archived_at", null).select("id").maybeSingle();
+  if (error) return failure("Unable to archive this deal. Refresh and try again.");
+  if (!archivedDeal) return failure("Deal not found or already archived.");
+  revalidatePath("/app/deals");
+  revalidatePath(`/app/deals/${parsedId.data}`);
+  return { ok: true, message: "Deal archived." };
 }
 

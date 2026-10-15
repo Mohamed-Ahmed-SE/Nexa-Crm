@@ -16,15 +16,20 @@
 
 ### First-run onboarding
 
-Step 1: Welcome  
-Step 2: Workspace name  
-Step 3: User role/job title  
-Step 4: Choose a pipeline template  
-Step 5: Optional CSV import  
-Step 6: Invite teammates  
-Step 7: Enter dashboard
+Onboarding has two phases. The initial workspace-creation wizard contains four steps:
 
-Onboarding must be skippable after the required workspace creation step.
+1. Welcome
+2. Workspace name (required)
+3. User role/job title (optional)
+4. Choose a pipeline template (can be skipped; Standard Sales is the default)
+
+After workspace creation succeeds, show a separate optional setup handoff:
+
+5. Import a CSV (optional)
+6. Invite teammates (optional)
+7. Enter dashboard (completion action)
+
+The CSV import and teammate invitation links are optional; users can skip both and go directly to the dashboard. Workspace creation is the required boundary between the wizard and the post-creation handoff.
 
 ---
 

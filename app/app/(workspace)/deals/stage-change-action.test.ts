@@ -85,7 +85,7 @@ describe("move deal stage action timeline", () => {
       owner_id: userId,
       related_entity_type: "deal",
       related_entity_id: dealId,
-      metadata: {},
+      metadata: { from_stage_id: sourceStageId, to_stage_id: targetStageId },
       is_system_event: false,
     });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/app/deals");

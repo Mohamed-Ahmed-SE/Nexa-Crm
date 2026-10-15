@@ -22,6 +22,7 @@ export default async function ContactDetailPage({ params, searchParams }: {
       listContactFormOptions(supabase, context.workspaceId, context.userId, context.fullName),
     ]);
   if (!detail) notFound();
+  const canEdit = hasWorkspacePermission(context.role, "crm.edit.all") || (hasWorkspacePermission(context.role, "crm.edit.own") && detail.contact.owner_id === context.userId);
   const lastActivityPage = Math.max(1, Math.ceil(detail.activityCount / contactPageSize));
   if (query.view === "activity" && activityPage > lastActivityPage) redirect(`/app/contacts/${validId.data}?view=activity&page=${lastActivityPage}`);
   return <ContactDetailWorkspace
@@ -29,7 +30,9 @@ export default async function ContactDetailPage({ params, searchParams }: {
     activityCount={detail.activityCount}
     activityPage={activityPage}
     attachments={detail.attachments}
-    canEdit={hasWorkspacePermission(context.role, "crm.edit.all") || (hasWorkspacePermission(context.role, "crm.edit.own") && detail.contact.owner_id === context.userId)}
+    canEdit={canEdit}
+    createNoteIntent={canEdit && query.createNote === "1"}
+    createTaskIntent={canEdit && query.createTask === "1"}
     canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")}
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
     currentUserId={context.userId}

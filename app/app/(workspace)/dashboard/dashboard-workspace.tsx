@@ -55,7 +55,7 @@ function UnavailableDashboard() {
   const router = useRouter();
   return <main className={styles.page}>
     <header className={styles.header}><div><h1>Sales Dashboard</h1><p>Workspace activity and sales work, in one place.</p></div></header>
-    <section className={styles.error} role="alert"><AlertCircle aria-hidden="true" size={20} /><div><h2>Dashboard data could not be loaded</h2><p>Your workspace records are unchanged. Check your connection and try again.</p><button type="button" onClick={() => router.refresh()}>Try again</button></div></section>
+    <section className={styles.error} role="alert"><AlertCircle aria-hidden="true" size={20} /><div><h2>Dashboard data could not be loaded</h2><p>Your workspace records are unchanged. Check your connection and confirm the current Supabase migrations are applied, then try again.</p><button type="button" onClick={() => router.refresh()}>Try again</button></div></section>
   </main>;
 }
 
@@ -69,19 +69,22 @@ function DashboardPage({ dashboard, canCreate }: DashboardPageProps) {
       <div><h1>Sales Dashboard</h1><p>Workspace activity and sales work, in one place.</p></div>
       <div className={styles.dateContext}><CalendarDays aria-hidden="true" size={16} /><span>{period}</span><span className={styles.today}>Updated {date(dashboard.today, dateFormat)}</span></div>
     </header>
-    <DashboardMetrics summary={summary} currency={dashboard.currency} />
+    <DashboardMetrics summary={summary} currency={dashboard.currency} monthStart={dashboard.monthStart} monthEnd={dashboard.monthEnd} now={dashboard.now} />
     <DashboardDealsPanel dashboard={dashboard} canCreate={canCreate} dateFormat={dateFormat} />
     <DashboardSupporting dashboard={dashboard} summary={summary} />
   </main>;
 }
 
-type DashboardMetricsProps = { summary: DashboardSummary; currency: string };
-function DashboardMetrics({ summary, currency }: DashboardMetricsProps) {
+type DashboardMetricsProps = { summary: DashboardSummary; currency: string; monthStart: string; monthEnd: string; now: string };
+function DashboardMetrics({ summary, currency, monthStart, monthEnd, now }: DashboardMetricsProps) {
+  const openDealsHref = "/app/deals?pipeline=all&status=open&view=list";
+  const wonDealsHref = `/app/deals?pipeline=all&status=won&wonFrom=${encodeURIComponent(monthStart)}&wonTo=${encodeURIComponent(monthEnd)}&view=list`;
+  const newLeadsHref = `/app/leads?createdFrom=${encodeURIComponent(monthStart)}&createdTo=${encodeURIComponent(now)}`;
   return <section className={styles.metrics} aria-label="Workspace sales summary">
-    <Metric icon={<CircleDollarSign />} label="Total pipeline value" value={money(summary.pipelineValue, currency)} note="Open deals · workspace currency" tone="green" href="/app/deals" />
-    <Metric icon={<Layers3 />} label="Open deals" value={summary.openDeals.toLocaleString()} note={`${summary.closingThisMonth} closing this month`} tone="blue" href="/app/deals" />
-    <Metric icon={<UsersRound />} label="New leads" value={summary.newLeads.toLocaleString()} note="Created this month" tone="violet" href="/app/leads" />
-    <Metric icon={<CheckCircle2 />} label="Won revenue" value={money(summary.wonRevenue, currency)} note="Won this month" tone="green" href="/app/deals" />
+    <Metric icon={<CircleDollarSign />} label="Total pipeline value" value={money(summary.pipelineValue, currency)} note="Open deals · workspace currency" tone="green" href={openDealsHref} />
+    <Metric icon={<Layers3 />} label="Open deals" value={summary.openDeals.toLocaleString()} note={`${summary.closingThisMonth} closing this month`} tone="blue" href={openDealsHref} />
+    <Metric icon={<UsersRound />} label="New leads" value={summary.newLeads.toLocaleString()} note="Created this month" tone="violet" href={newLeadsHref} />
+    <Metric icon={<CheckCircle2 />} label="Won revenue" value={money(summary.wonRevenue, currency)} note="Won this month" tone="green" href={wonDealsHref} />
     <Metric icon={<CalendarDays />} label="Overdue tasks" value={summary.overdueTasks.toLocaleString()} note="Open tasks past due" tone={summary.overdueTasks ? "red" : "green"} href="/app/tasks?view=overdue" />
   </section>;
 }
@@ -130,6 +133,7 @@ function DashboardSupporting({ dashboard, summary }: DashboardSupportingProps) {
     <section className={styles.widget} aria-labelledby="activity-heading"><WidgetHeading id="activity-heading" title="Recent activity" href="/app/notifications" /><ul className={styles.activityList}>{dashboard.activities.length ? dashboard.activities.map((activity) => <li key={activity.id}><Activity aria-hidden="true" size={16} /><div><p>{activity.subject}{activity.relatedTo && <> · <Link href={activity.relatedHref ?? "/app/deals"}>{activity.relatedTo}</Link></>}</p><time dateTime={activity.occurredAt}>{ago(activity.occurredAt, dashboard.timeZone, dateFormat)}</time></div></li>) : <li className={styles.widgetEmpty}>Activity will appear here when your team records it.</li>}</ul></section>
     <section className={styles.widget} aria-labelledby="tasks-heading"><WidgetHeading id="tasks-heading" title="Tasks due today" href="/app/tasks?view=today" /><ul className={styles.taskList}>{summary.tasksToday.length ? summary.tasksToday.slice(0, 6).map((task) => <li key={task.id}><span className={styles.taskDot} aria-hidden="true" /><div><Link href={task.relatedHref ?? "/app/tasks"}>{task.title}</Link><small>{task.relatedTo ?? "No related record"}</small></div><time dateTime={task.dueAt}>{new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZone: dashboard.timeZone }).format(new Date(task.dueAt))}</time></li>) : <li className={styles.widgetEmpty}>No open tasks are due today.</li>}</ul></section>
     <section className={styles.widget} aria-labelledby="attention-heading"><WidgetHeading id="attention-heading" title="Deals needing attention" href="/app/deals" /><ul className={styles.attentionList}>{summary.attentionDeals.length ? summary.attentionDeals.map(({ deal, reason }) => <li key={deal.id}><AlertCircle aria-hidden="true" size={16} /><div><Link href={`/app/deals/${deal.id}`}>{deal.title}</Link><small>{reason}</small></div><span>{money(deal.amount, deal.currency)}</span></li>) : <li className={styles.widgetEmpty}>No open deals currently meet the attention rules.</li>}</ul></section>
+    <section className={styles.widget} aria-labelledby="lead-attention-heading"><WidgetHeading id="lead-attention-heading" title="Leads needing attention" href="/app/leads" /><ul className={styles.attentionList}>{summary.attentionLeads.length ? summary.attentionLeads.slice(0, 5).map((lead) => <li key={lead.id}><AlertCircle aria-hidden="true" size={16} /><div><Link href={`/app/leads/${lead.id}`}>{lead.fullName}</Link><small>No activity in the last 14 days</small></div></li>) : <li className={styles.widgetEmpty}>No leads currently meet the attention rules.</li>}</ul></section>
   </section>;
 }
 

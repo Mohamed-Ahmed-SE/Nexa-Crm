@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   from: vi.fn(),
   activityInsert: vi.fn(),
   dealInsert: vi.fn(),
+  entityInsert: vi.fn(),
+  entityInsertResult: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -20,6 +22,7 @@ const userId = "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2";
 const dealId = "b5bb4ec1-f535-4f61-a8cc-c4c98fac9b79";
 const pipelineId = "9d26f4d8-85c7-47f0-a3fd-f2be2c7ff084";
 const stageId = "eb591b6b-660b-4a9c-90ad-88a5f9e1dfe7";
+const tagId = "c2155412-d8a0-4792-b2bc-f6064b2798f4";
 
 function dealForm() {
   const form = new FormData();
@@ -61,12 +64,19 @@ function setupCreation(
   const pipelineTable = { select: vi.fn().mockReturnValue(pipelineQuery) };
   const stageTable = { select: vi.fn().mockReturnValue(stageQuery) };
   const dealTable = { insert: vi.fn().mockReturnValue(insertQuery) };
+  const tagQuery = { eq: vi.fn().mockReturnThis(), in: vi.fn().mockReturnThis(), then: (resolve: (result: unknown) => unknown) => Promise.resolve({ data: [{ id: tagId }], error: null }).then(resolve) };
+  const tagsTable = { select: vi.fn().mockReturnValue(tagQuery) };
+  const entityRead = { eq: vi.fn().mockReturnThis(), then: (resolve: (result: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
+  mocks.entityInsertResult.mockResolvedValue({ data: [{ tag_id: tagId }], error: null });
+  const entityTable = { select: vi.fn().mockReturnValue(entityRead), insert: (rows: unknown[]) => { mocks.entityInsert(rows); return { select: vi.fn().mockImplementation(() => mocks.entityInsertResult()) }; } };
   const activityTable = { insert: mocks.activityInsert.mockResolvedValue({ error: activityError }) };
   mocks.from.mockImplementation((table: string) => {
     if (table === "workspaces") return workspaceTable;
     if (table === "pipelines") return pipelineTable;
     if (table === "pipeline_stages") return stageTable;
     if (table === "deals") return dealTable;
+    if (table === "tags") return tagsTable;
+    if (table === "entity_tags") return entityTable;
     return activityTable;
   });
   mocks.createSupabaseServerClient.mockResolvedValue({ from: mocks.from });
@@ -93,7 +103,7 @@ describe("create deal action timeline", () => {
       owner_id: userId,
       related_entity_type: "deal",
       related_entity_id: dealId,
-      metadata: {},
+      metadata: { to_stage_id: stageId },
       is_system_event: false,
     });
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/app/deals");
@@ -111,6 +121,38 @@ describe("create deal action timeline", () => {
     expect(response).toEqual({ ok: false, message: "Deal could not be created. Check your access and try again." });
     expect(mocks.activityInsert).not.toHaveBeenCalled();
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("validates tag IDs and persists verified workspace associations", async () => {
+    const form = dealForm();
+    form.append("tagIds", tagId);
+
+    const response = await createDealAction(form);
+
+    expect(response).toEqual({ ok: true, message: "Deal added." });
+    expect(mocks.entityInsert).toHaveBeenCalledWith([{ workspace_id: workspaceId, entity_type: "deal", entity_id: dealId, tag_id: tagId }]);
+  });
+
+  it("rejects malformed or foreign-workspace tag IDs before creating a deal", async () => {
+    const malformed = dealForm();
+    malformed.append("tagIds", "not-a-uuid");
+    await expect(createDealAction(malformed)).resolves.toMatchObject({ ok: false, message: "Check the highlighted fields." });
+
+    const foreign = dealForm();
+    foreign.append("tagIds", "9d26f4d8-85c7-47f0-a3fd-f2be2c7ff084");
+    await expect(createDealAction(foreign)).resolves.toEqual({ ok: false, message: "Choose tags from this workspace." });
+    expect(mocks.dealInsert).not.toHaveBeenCalled();
+  });
+
+  it("clearly warns when a created deal's tag association cannot be saved", async () => {
+    mocks.entityInsertResult.mockResolvedValue({ data: null, error: new Error("tag insert failed") });
+    const form = dealForm();
+    form.append("tagIds", tagId);
+
+    const response = await createDealAction(form);
+
+    expect(response).toEqual({ ok: true, message: "Deal added, but its tags could not be saved. Edit the deal to try again.", tagWarning: true });
+    expect(mocks.activityInsert).toHaveBeenCalledOnce();
   });
 
   it("keeps the deal creation successful and warns when its event cannot be recorded", async () => {

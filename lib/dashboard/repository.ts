@@ -1,8 +1,9 @@
 import "server-only";
 
 import type { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { DashboardActivity, DashboardDeal, DashboardTask, WorkspaceDashboardData } from "@/lib/dashboard/types";
+import type { DashboardActivity, DashboardDeal, DashboardLeadActivity, DashboardLeadAttentionCandidate, DashboardTask, WorkspaceDashboardData } from "@/lib/dashboard/types";
 import { dashboardDateKey, dashboardDateStart } from "@/lib/dashboard/calendar";
+import { inactiveOwnerLabel, InactiveWorkspaceMemberLookupError, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof createSupabaseServerClient>>>;
 type Row = Record<string, unknown>;
@@ -22,9 +23,9 @@ const optionalText = (fieldValue: unknown) => typeof fieldValue === "string" ? f
 const label = (fieldValue: unknown, fallback: string) => text(fieldValue).trim() ? text(fieldValue) : fallback;
 const stageType = (stageTypeValue: unknown): "open" | "won" | "lost" => stageTypeValue === "won" || stageTypeValue === "lost" ? stageTypeValue : "open";
 
-type DashboardRows = { deals: Row[]; stages: Row[]; leads: Row[]; tasks: Row[]; activities: Row[]; dealActivities: Row[]; ownerLabels: Row[] };
-type DashboardBuildOptions = { workspaceId: string; currency: string; timeZone: string; today: string; rows: DashboardRows };
-type DashboardQueryOptions = { workspaceId: string; now: Date; today: string; timeZone: string };
+type DashboardRows = { deals: Row[]; stages: Row[]; leads: Row[]; leadAttentionCandidates: Row[]; leadActivities: Row[]; tasks: Row[]; activities: Row[]; dealActivities: Row[]; ownerLabels: Row[] };
+type DashboardBuildOptions = { workspaceId: string; currency: string; timeZone: string; today: string; monthStart: string; monthEnd: string; now: string; rows: DashboardRows };
+type DashboardQueryOptions = { workspaceId: string; now: Date; today: string; timeZone: string; monthStart: string };
 type DashboardLabelQuery = { workspaceId: string; type: "company" | "contact" | "lead"; table: "companies" | "contacts" | "leads"; columns: string; ids: string[] };
 
 function logDashboardQueryError(queryName: string, error: { code?: unknown }) {
@@ -38,26 +39,34 @@ export async function loadWorkspaceDashboard(supabase: Supabase, workspaceId: st
   if (workspace.error || !workspace.data) throw new DashboardUnavailableError();
   const timeZone = workspace.data.timezone;
   const today = dashboardDateKey(now, timeZone);
-  const rows = await loadDashboardRows(supabase, { workspaceId, now, today, timeZone });
-  return buildWorkspaceDashboard(supabase, { workspaceId, currency: workspace.data.default_currency, timeZone, today, rows });
+  const [year, month] = today.slice(0, 7).split("-").map(Number);
+  const monthStart = dashboardDateStart(`${today.slice(0, 7)}-01`, timeZone).toISOString();
+  const monthEnd = dashboardDateStart(new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10), timeZone).toISOString();
+  const rows = await loadDashboardRows(supabase, { workspaceId, now, today, timeZone, monthStart });
+  return buildWorkspaceDashboard(supabase, { workspaceId, currency: workspace.data.default_currency, timeZone, today, monthStart, monthEnd, now: now.toISOString(), rows });
 }
 
 async function loadDashboardRows(supabase: Supabase, options: DashboardQueryOptions): Promise<DashboardRows> {
-  const { workspaceId, now, today, timeZone } = options;
-  const monthStart = dashboardDateStart(`${today.slice(0, 7)}-01`, timeZone).toISOString();
+  const { workspaceId, now, monthStart } = options;
   const since14Days = new Date(now.valueOf() - 14 * 86_400_000).toISOString();
-  const [deals, stages, leads, tasks, activities, dealActivities, ownerLabels] = await Promise.all([
+  const [deals, stages, leads, leadAttentionCandidates, tasks, activities, dealActivities, ownerLabels] = await Promise.all([
     supabase.from("deals").select("id,title,amount,currency,status,expected_close_date,created_at,won_at,stage_id,pipeline_id,owner_id,pipeline_stages(name,stage_type),pipelines(name),companies(name),contacts(first_name,last_name),lead_sources(name)").eq("workspace_id", workspaceId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("pipeline_stages").select("id,pipeline_id,name,position,stage_type,pipelines(name)").eq("workspace_id", workspaceId).eq("is_active", true).order("position"),
     supabase.from("leads").select("id,created_at,lead_sources(name)").eq("workspace_id", workspaceId).is("archived_at", null).gte("created_at", monthStart).lte("created_at", now.toISOString()),
+    supabase.from("leads").select("id,full_name,status,created_at").eq("workspace_id", workspaceId).is("archived_at", null).in("status", ["new", "contacted", "qualified"]).lte("created_at", since14Days),
     supabase.from("tasks").select("id,title,due_at,priority,related_entity_type,related_entity_id,status").eq("workspace_id", workspaceId).eq("status", "open").not("due_at", "is", null).order("due_at"),
     supabase.from("activities").select("id,subject,activity_type,occurred_at,related_entity_type,related_entity_id").eq("workspace_id", workspaceId).order("occurred_at", { ascending: false }).limit(8),
     supabase.from("activities").select("related_entity_id,occurred_at").eq("workspace_id", workspaceId).eq("related_entity_type", "deal").gte("occurred_at", since14Days).lte("occurred_at", now.toISOString()),
     supabase.rpc("get_workspace_report_member_labels", { target_workspace_id: workspaceId }),
   ]);
+  const leadActivities = leadAttentionCandidates.data?.length
+    ? await supabase.from("activities").select("id,related_entity_id,occurred_at").eq("workspace_id", workspaceId)
+      .eq("related_entity_type", "lead").in("related_entity_id", leadAttentionCandidates.data.map(({ id }) => id))
+      .gte("occurred_at", since14Days).lte("occurred_at", now.toISOString())
+    : { data: [], error: null };
   const coreQueries = [
-    ["deals", deals], ["pipeline_stages", stages], ["leads", leads], ["tasks", tasks],
-    ["activities", activities], ["deal activities", dealActivities],
+    ["deals", deals], ["pipeline_stages", stages], ["leads", leads], ["lead attention candidates", leadAttentionCandidates],
+    ["lead attention activities", leadActivities], ["tasks", tasks], ["activities", activities], ["deal activities", dealActivities],
   ] as const;
   for (const [queryName, query] of coreQueries) {
     if (query.error) {
@@ -66,10 +75,25 @@ async function loadDashboardRows(supabase: Supabase, options: DashboardQueryOpti
     }
   }
   if (ownerLabels.error) logDashboardQueryError("get_workspace_report_member_labels", ownerLabels.error);
+  const memberLabels = (ownerLabels.data ?? []) as Array<{ user_id: string; display_name: string }>;
+  let inactiveOwnerIds = new Set<string>();
+  if (!ownerLabels.error) {
+    try {
+      inactiveOwnerIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, memberLabels.map(({ user_id }) => user_id));
+    } catch (error) {
+      if (!(error instanceof InactiveWorkspaceMemberLookupError)) throw error;
+      logDashboardQueryError("list_inactive_workspace_member_ids", error);
+      throw new DashboardUnavailableError();
+    }
+  }
   return {
     deals: (deals.data ?? []) as Row[], stages: (stages.data ?? []) as Row[], leads: (leads.data ?? []) as Row[],
+    leadAttentionCandidates: (leadAttentionCandidates.data ?? []) as Row[], leadActivities: (leadActivities.data ?? []) as Row[],
     tasks: (tasks.data ?? []) as Row[], activities: (activities.data ?? []) as Row[], dealActivities: (dealActivities.data ?? []) as Row[],
-    ownerLabels: (ownerLabels.data ?? []) as Row[],
+    ownerLabels: memberLabels.map((row) => ({
+      ...row,
+      display_name: inactiveOwnerIds.has(row.user_id) ? inactiveOwnerLabel(row.display_name) : row.display_name,
+    })) as Row[],
   };
 }
 
@@ -80,8 +104,10 @@ async function buildWorkspaceDashboard(supabase: Supabase, options: DashboardBui
   const relatedRows = [...options.rows.activities, ...options.rows.tasks];
   const relationLabels = await loadActivityLabels(supabase, options.workspaceId, relatedRows, deals);
   return {
-    currency: options.currency, timeZone: options.timeZone, deals,
+    currency: options.currency, timeZone: options.timeZone, monthStart: options.monthStart, monthEnd: options.monthEnd, now: options.now, deals,
     stages: options.rows.stages.map(mapStage), leads: options.rows.leads.map(mapLead),
+    leadAttentionCandidates: options.rows.leadAttentionCandidates.map(mapLeadAttentionCandidate),
+    leadActivities: options.rows.leadActivities.map(mapLeadActivity),
     tasks: options.rows.tasks.map((row) => mapTask(row, relationLabels, deals)),
     activities: options.rows.activities.map((row) => mapActivity(row, relationLabels, deals)), today: options.today,
   };
@@ -104,6 +130,17 @@ function mapStage(row: Row) {
 
 function mapLead(row: Row) {
   return { id: text(row.id), createdAt: text(row.created_at), source: text(joined(row.lead_sources)?.name, "Unspecified") };
+}
+
+function mapLeadAttentionCandidate(row: Row): DashboardLeadAttentionCandidate {
+  return {
+    id: text(row.id), fullName: text(row.full_name), status: text(row.status) as DashboardLeadAttentionCandidate["status"],
+    createdAt: text(row.created_at),
+  };
+}
+
+function mapLeadActivity(row: Row): DashboardLeadActivity {
+  return { leadId: text(row.related_entity_id), occurredAt: text(row.occurred_at) };
 }
 
 function mapDeal(row: Row, ownerLabels: Map<string, string>, dealActivity: Map<string, string>): DashboardDeal {

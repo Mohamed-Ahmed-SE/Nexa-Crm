@@ -18,7 +18,7 @@ Codex should keep this as a working checklist.
 ## Auth / Workspace
 - [ ] sign in
 - [ ] password reset
-- [ ] onboarding
+- [x] onboarding
 - [ ] workspace
 - [ ] memberships
 - [ ] roles
@@ -33,10 +33,10 @@ Codex should keep this as a working checklist.
 - [ ] saved views
 - [ ] add
 - [ ] edit
-- [ ] detail
-- [ ] activity
-- [ ] notes
-- [ ] tasks
+- [x] detail
+- [x] activity
+- [x] notes
+- [x] tasks
 - [ ] convert
 - [ ] import
 - [ ] export
@@ -69,8 +69,11 @@ Codex should keep this as a working checklist.
 - [ ] optimistic rollback
 - [ ] add
 - [ ] edit
-- [ ] detail
-- [ ] timeline
+- [x] detail
+- [x] timeline
+- [x] activity
+- [x] notes
+- [x] tasks
 - [ ] mark won
 - [ ] mark lost
 - [ ] reopen
@@ -108,7 +111,7 @@ Codex should keep this as a working checklist.
 
 ## Search / Notifications
 - [ ] command search
-- [ ] grouped entity results
+- [ ] grouped entity results, at most five per entity, ordered by `created_at` descending and `id` ascending as the tie-breaker
 - [ ] notifications
 - [ ] mark read
 

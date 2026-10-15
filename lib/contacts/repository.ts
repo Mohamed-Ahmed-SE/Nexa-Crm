@@ -1,5 +1,7 @@
 import "server-only";
 
+import { inactiveOwnerLabel, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
+
 import { buildContactSearchFilter, contactPageSize, contactSortOrder, escapeContactSearchTerm, parsePersistedContactView } from "@/lib/contacts/schema";
 import type { ContactSearchParams, ContactViewSort, ContactViewColumn } from "@/lib/contacts/schema";
 
@@ -7,7 +9,7 @@ export type ContactOwner = { id: string; label: string };
 export type ContactCompany = { id: string; name: string; industry: string | null; employee_size: number | null; description: string | null; archived_at: string | null };
 export type ContactRow = {
   id: string; workspace_id: string; company_id: string | null; first_name: string; last_name: string; email: string | null;
-  phone: string | null; job_title: string | null; linkedin_url: string | null; owner_id: string | null;
+  phone: string | null; address?: string | null; job_title: string | null; linkedin_url: string | null; owner_id: string | null; ownerLabel?: string;
   lifecycle_status: "active" | "inactive" | "customer" | "former_customer"; created_at: string; updated_at: string;
   company?: ContactCompany | null;
 };
@@ -63,6 +65,7 @@ export async function listWorkspaceContacts(
     label: user_id === currentUserId ? currentUserName : `Workspace member · ${user_id.slice(0, 6)}`,
   }));
   const pageContacts = records.data ?? [];
+  const inactiveOwnerIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, pageContacts.map(({ owner_id }) => owner_id));
   const contactIds = pageContacts.map(({ id }) => id);
   const now = new Date().toISOString();
   const related = contactIds.length ? await Promise.all([
@@ -86,6 +89,9 @@ export async function listWorkspaceContacts(
   return {
     contacts: pageContacts.map((row) => ({
       ...row,
+      ownerLabel: row.owner_id && inactiveOwnerIds.has(row.owner_id)
+        ? inactiveOwnerLabel(`Workspace member · ${row.owner_id.slice(0, 6)}`)
+        : undefined,
       company: Array.isArray(row.companies) ? row.companies[0] ?? null : row.companies,
       lastActivity: lastActivityByContact.get(row.id) ?? null,
       nextActivity: nextActivityByContact.get(row.id) ?? null,
@@ -120,7 +126,7 @@ export async function listContactSavedViews(supabase: Supabase, workspaceId: str
 }
 
 export async function getContact(supabase: Supabase, workspaceId: string, id: string) {
-  return supabase.from("contacts").select("id, workspace_id, company_id, first_name, last_name, email, phone, job_title, linkedin_url, owner_id, lifecycle_status, created_at, updated_at")
+  return supabase.from("contacts").select("id, workspace_id, company_id, first_name, last_name, email, phone, address, job_title, linkedin_url, owner_id, lifecycle_status, created_at, updated_at")
     .eq("workspace_id", workspaceId).eq("id", id).is("archived_at", null).maybeSingle();
 }
 
@@ -137,12 +143,18 @@ export async function getContactDetail(supabase: Supabase, workspaceId: string, 
   if (contactResult.error) throw new Error("Unable to load this contact.");
   if (!contactResult.data) return null;
   const contact = contactResult.data as ContactRow;
+  const inactiveOwnerIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, [contact.owner_id]);
   const companyResult = contact.company_id
     ? await supabase.from("companies").select("id, name, website, industry, employee_size, phone, city, state, country, description, owner_id, archived_at").eq("workspace_id", workspaceId).eq("id", contact.company_id).maybeSingle()
     : { data: null, error: null };
   if (companyResult.error || dealsResult.error || activitiesResult.error || tasksResult.error || notesResult.error || filesResult.error) throw new Error("Unable to load contact activity and related records.");
   return {
-    contact,
+    contact: {
+      ...contact,
+      ownerLabel: contact.owner_id && inactiveOwnerIds.has(contact.owner_id)
+        ? inactiveOwnerLabel(`Workspace member · ${contact.owner_id.slice(0, 6)}`)
+        : undefined,
+    },
     company: companyResult.data,
     deals: (dealsResult.data ?? []) as unknown as ContactDeal[],
     activities: (activitiesResult.data ?? []) as ContactActivity[],
@@ -154,7 +166,7 @@ export async function getContactDetail(supabase: Supabase, workspaceId: string, 
 }
 
 export async function getContactForEdit(supabase: Supabase, workspaceId: string, id: string) {
-  return supabase.from("contacts").select("id, workspace_id, company_id, first_name, last_name, email, phone, job_title, linkedin_url, owner_id, lifecycle_status")
+  return supabase.from("contacts").select("id, workspace_id, company_id, first_name, last_name, email, phone, address, job_title, linkedin_url, owner_id, lifecycle_status")
     .eq("workspace_id", workspaceId).eq("id", id).is("archived_at", null).maybeSingle();
 }
 

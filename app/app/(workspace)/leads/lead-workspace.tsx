@@ -106,7 +106,7 @@ function LeadForm({ lead, sources, owners, currency, canReassign, onClose }: Lea
             <label className="leads-field"><span>Status</span><select name="status" onChange={(event) => setStatus(event.target.value as LeadStatus)} value={status}>{editableStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>{errors.status?.[0] && <small>{errors.status[0]}</small>}</label>
             <label className="leads-field"><span>Source</span><select defaultValue={lead?.source_id ?? ""} name="sourceId"><option value="">No source</option>{lead?.source_id && needsRetainedRelationOption(lead.source_id, sources.map((source) => source.id)) && <option value={lead.source_id}>Current source (inactive — retained)</option>}{sources.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</select>{errors.sourceId?.[0] && <small>{errors.sourceId[0]}</small>}</label>
             <Field label={`Estimated value (${currency})`} name="estimatedValue" min="0" step="0.01" type="number" error={errors.estimatedValue?.[0]} defaultValue={lead?.estimated_value ?? 0} />
-            {canReassign ? <label className="leads-field"><span>Owner</span><select defaultValue={lead?.owner_id ?? ""} name="ownerId"><option value="">Unassigned</option>{lead?.owner_id && needsRetainedRelationOption(lead.owner_id, owners.map((owner) => owner.id)) && <option value={lead.owner_id}>Current owner (inactive — retained)</option>}{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select>{errors.ownerId?.[0] && <small>{errors.ownerId[0]}</small>}</label> : <input name="ownerId" type="hidden" value={lead?.owner_id ?? ""} />}
+            {canReassign ? <label className="leads-field"><span>Owner</span><select defaultValue={lead?.owner_id ?? ""} name="ownerId"><option value="">Unassigned</option>{lead?.owner_id && needsRetainedRelationOption(lead.owner_id, owners.map((owner) => owner.id)) && <option value={lead.owner_id}>Current owner · Inactive user</option>}{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select>{errors.ownerId?.[0] && <small>{errors.ownerId[0]}</small>}</label> : <input name="ownerId" type="hidden" value={lead?.owner_id ?? ""} />}
           </div>
           <label className="leads-field"><span>Notes <em>Optional</em></span><textarea defaultValue={lead?.notes_summary ?? ""} name="notesSummary" rows={3} />{errors.notesSummary?.[0] && <small>{errors.notesSummary[0]}</small>}</label>
           {!lead && state.duplicateMatches?.length ? <>
@@ -213,10 +213,10 @@ function BulkLeadActions({ selectedIds, owners, tags, canReassign, onActionStart
 }
 
 export function LeadWorkspace({
-  leads, sources, owners, tags, canCreate, canImport, canExport, createIntent, canEditAll, canConvert, canArchive, conversionOptions, canReassign, canTag, currentUserId, currency, search, statusFilter, sourceFilter, tagFilter, page, totalCount, matchedCount, newCount, qualifiedCount, ownerFilter, sort, visibleColumns, savedViews, activeViewId,
+  leads, sources, owners, tags, canCreate, canImport, canExport, createIntent, canEditAll, canConvert, canArchive, conversionOptions, canReassign, canTag, currentUserId, currency, search, statusFilter, sourceFilter, tagFilter, createdFrom, createdTo, page, totalCount, matchedCount, newCount, qualifiedCount, ownerFilter, sort, visibleColumns, savedViews, activeViewId,
 }: {
   leads: LeadRow[]; sources: LeadSource[]; owners: LeadOwner[]; tags: LeadTag[]; canCreate: boolean; canImport: boolean; canExport: boolean; createIntent: boolean; canEditAll: boolean; canConvert: boolean; canArchive: boolean; conversionOptions: LeadConversionOptions; canReassign: boolean; canTag: boolean; currentUserId: string; currency: string;
-  search: string; statusFilter: string; sourceFilter: string; tagFilter: string; ownerFilter: string; page: number; totalCount: number; matchedCount: number; newCount: number; qualifiedCount: number;
+  search: string; statusFilter: string; sourceFilter: string; tagFilter: string; createdFrom: string; createdTo: string; ownerFilter: string; page: number; totalCount: number; matchedCount: number; newCount: number; qualifiedCount: number;
   sort: LeadViewSort; visibleColumns: LeadViewColumn[]; savedViews: LeadSavedView[]; activeViewId: string;
 }) {
   const router = useRouter();
@@ -247,12 +247,13 @@ export function LeadWorkspace({
   const clearBulkSuccessMessage = useCallback(() => setBulkSuccessMessage(""), []);
   useCreateIntent(createIntent, canCreate, openCreateForm);
   const pageCount = Math.max(1, Math.ceil(matchedCount / 25));
+  const hasFilters = Boolean(search || statusFilter !== "all" || sourceFilter || ownerFilter || tagFilter || createdFrom || createdTo);
   const actionVisible = canEditAll || canReassign || canCreate || canConvert || canArchive;
 
   return <main className="page-container leads-page">
     <header className="leads-header">
       <div><h1 className="page-title">Leads</h1><p className="page-description">Track, qualify, and manage prospective customers in this workspace.</p></div>
-      <div className="entity-list-actions">{canExport && <a className="leads-secondary-button" href={filteredExportHref("leads", { q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter })}>Export CSV</a>}{canImport && <a className="leads-secondary-button" href="/app/data-import?entity=leads">Import CSV</a>}{canCreate && <button className="leads-primary-button" onClick={() => setFormLead(null)} type="button"><Plus aria-hidden="true" size={16} />Add Lead</button>}</div>
+      <div className="entity-list-actions">{canExport && <a className="leads-secondary-button" href={filteredExportHref("leads", { q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, createdFrom, createdTo })}>Export CSV</a>}{canImport && <a className="leads-secondary-button" href="/app/data-import?entity=leads">Import CSV</a>}{canCreate && <button className="leads-primary-button" onClick={() => setFormLead(null)} type="button"><Plus aria-hidden="true" size={16} />Add Lead</button>}</div>
     </header>
 
     <section aria-label="Lead status counts" className="leads-summary">
@@ -271,6 +272,8 @@ export function LeadWorkspace({
         <label className="leads-filter"><span className="sr-only">Saved view</span><select aria-label="Saved view" defaultValue={activeViewId} name="view"><option value="">Current filters</option>{savedViews.map((view) => <option key={view.id} value={view.id}>{view.name}</option>)}</select></label>
         <label className="leads-filter"><span className="sr-only">Sort leads</span><select aria-label="Sort leads" defaultValue={sort} name="sort" onChange={clearSelectedSavedView}>{leadViewSorts.map((item) => <option key={item} value={item}>{sortLabels[item]}</option>)}</select></label>
         <button className="leads-secondary-button" type="submit">Apply filters</button>
+         <input name="createdFrom" type="hidden" value={createdFrom} /><input name="createdTo" type="hidden" value={createdTo} />
+         {(createdFrom || createdTo) && <p className="leads-filter-context">Created date range: {createdFrom || "—"} – {createdTo || "—"} <a href={pageHref({ page: 1, q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, sort, viewId: "", createdFrom: "", createdTo: "" })}>Clear date range</a></p>}
       </form>
       <SavedViewControls activeViewId={activeViewId} owner={ownerFilter} search={search} sort={sort} source={sourceFilter} status={statusFilter} tagId={tagFilter} visibleColumns={visibleColumns} />
       <BulkLeadActions canReassign={canReassign} onActionStart={clearBulkSuccessMessage} onSuccess={clearAfterBulkAction} owners={owners} selectedIds={selectedIds} tags={canTag ? tags : []} />
@@ -287,7 +290,7 @@ export function LeadWorkspace({
               {visibleColumns.includes("company") && <td data-label="Company">{lead.company_name || "—"}</td>}
               {visibleColumns.includes("status") && <td data-label="Status"><span className={`leads-status status-${lead.status}`}>{lead.status === "converted" ? "Converted" : statusLabels[lead.status]}</span></td>}
               {visibleColumns.includes("source") && <td data-label="Source">{sourceLabel(lead.source_id, sources)}</td>}
-              {visibleColumns.includes("owner") && <td data-label="Owner">{ownerLabel(lead.owner_id, owners)}</td>}
+              {visibleColumns.includes("owner") && <td data-label="Owner">{lead.ownerLabel ?? ownerLabel(lead.owner_id, owners)}</td>}
               {visibleColumns.includes("value") && <td data-label="Estimated value" className="leads-amount">{formatValue(Number(lead.estimated_value), lead.currency || currency)}</td>}
               {visibleColumns.includes("updated") && <td data-label="Updated"><time dateTime={lead.updated_at}>{formatCalendarDate(lead.updated_at, dateFormat)}</time></td>}
               {visibleColumns.includes("tags") && <td data-label="Tags">{lead.tags?.length ? <span className="contact-tag-list">{lead.tags.map((tag) => <span className="contact-tag" key={tag.id}>{tag.name}</span>)}</span> : "—"}</td>}
@@ -296,8 +299,8 @@ export function LeadWorkspace({
           })}</tbody>
         </table>
       </div>
-      {leads.length === 0 && <div className="leads-empty"><h2>{search || statusFilter !== "all" || sourceFilter || ownerFilter || tagFilter ? "No matching leads" : "No leads yet"}</h2><p>{search || statusFilter !== "all" || sourceFilter || ownerFilter || tagFilter ? "Try changing or clearing your filters." : "Leads you add to this workspace will appear here."}</p>{canCreate && !search && statusFilter === "all" && !sourceFilter && !ownerFilter && !tagFilter && <button className="leads-secondary-button" onClick={() => setFormLead(null)} type="button">Add your first lead</button>}</div>}
-      <nav aria-label="Leads pages" className="leads-pagination"><span>{matchedCount === 0 ? "0 records" : `${(page - 1) * 25 + 1}–${Math.min(page * 25, matchedCount)} of ${matchedCount} records`}</span><div><a aria-disabled={page <= 1} className={page <= 1 ? "is-disabled" : ""} href={page <= 1 ? undefined : pageHref({ page: page - 1, q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, sort, viewId: activeViewId })}>Previous</a><span>Page {page} of {pageCount}</span><a aria-disabled={page >= pageCount} className={page >= pageCount ? "is-disabled" : ""} href={page >= pageCount ? undefined : pageHref({ page: page + 1, q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, sort, viewId: activeViewId })}>Next</a></div></nav>
+      {leads.length === 0 && <div className="leads-empty"><h2>{hasFilters ? "No matching leads" : "No leads yet"}</h2><p>{hasFilters ? "Try changing or clearing your filters." : "Leads you add to this workspace will appear here."}</p>{canCreate && !hasFilters && <button className="leads-secondary-button" onClick={() => setFormLead(null)} type="button">Add your first lead</button>}</div>}
+      <nav aria-label="Leads pages" className="leads-pagination"><span>{matchedCount === 0 ? "0 records" : `${(page - 1) * 25 + 1}–${Math.min(page * 25, matchedCount)} of ${matchedCount} records`}</span><div><a aria-disabled={page <= 1} className={page <= 1 ? "is-disabled" : ""} href={page <= 1 ? undefined : pageHref({ page: page - 1, q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, sort, viewId: activeViewId, createdFrom, createdTo })}>Previous</a><span>Page {page} of {pageCount}</span><a aria-disabled={page >= pageCount} className={page >= pageCount ? "is-disabled" : ""} href={page >= pageCount ? undefined : pageHref({ page: page + 1, q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, sort, viewId: activeViewId, createdFrom, createdTo })}>Next</a></div></nav>
     </section>
     {formLead !== undefined && <LeadForm canReassign={canReassign} currency={currency} lead={formLead ?? undefined} onClose={() => setFormLead(undefined)} owners={owners} sources={sources} />}
     {conversionLead && <LeadConversionDialog currency={currency} lead={conversionLead} onClose={() => setConversionLead(null)} options={conversionOptions} owners={owners} currentUserId={currentUserId} />}
@@ -340,8 +343,8 @@ function filteredExportHref(entity: string, filters: Record<string, string>) {
   return `/app/${entity}/export${params.size ? `?${params.toString()}` : ""}`;
 }
 
-function pageHref({ page, q, status, source, owner, tagId, sort, viewId }: {
-  page: number; q: string; status: string; source: string; owner: string; tagId: string; sort: LeadViewSort; viewId: string;
+function pageHref({ page, q, status, source, owner, tagId, sort, viewId, createdFrom, createdTo }: {
+  page: number; q: string; status: string; source: string; owner: string; tagId: string; sort: LeadViewSort; viewId: string; createdFrom: string; createdTo: string;
 }) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
@@ -349,6 +352,8 @@ function pageHref({ page, q, status, source, owner, tagId, sort, viewId }: {
   if (source) params.set("source", source);
   if (owner) params.set("owner", owner);
   if (tagId) params.set("tagId", tagId);
+  if (createdFrom) params.set("createdFrom", createdFrom);
+  if (createdTo) params.set("createdTo", createdTo);
   if (sort !== "updated_desc") params.set("sort", sort);
   if (viewId) params.set("view", viewId);
   params.set("page", String(page));

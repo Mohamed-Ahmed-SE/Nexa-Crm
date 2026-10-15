@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   companyUpdate: vi.fn(),
   activityInsert: vi.fn(),
   from: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -31,7 +32,7 @@ function companyForm(ownerId: string) {
   return form;
 }
 
-function setupUpdate({ ownerId = oldOwnerId, activityError = false, newOwnerLabel = "Sam Owner" } = {}) {
+function setupUpdate({ ownerId = oldOwnerId, activityError = false, newOwnerLabel = "Sam Owner", activeOwnerIds = [oldOwnerId, newOwnerId] } = {}) {
   let requestedOwnerId: string | null = null;
   const companyRead = {
     eq: vi.fn().mockReturnThis(),
@@ -66,7 +67,7 @@ function setupUpdate({ ownerId = oldOwnerId, activityError = false, newOwnerLabe
   });
   mocks.createSupabaseServerClient.mockResolvedValue({
     from: mocks.from,
-    rpc: vi.fn().mockResolvedValue({ data: [{ user_id: oldOwnerId }, { user_id: newOwnerId }], error: null }),
+    rpc: mocks.rpc.mockResolvedValue({ data: activeOwnerIds.map((user_id: string) => ({ user_id })), error: null }),
   });
   mocks.requirePermission.mockResolvedValue({ workspaceId, userId, role: "manager" });
 }
@@ -111,12 +112,24 @@ describe("company owner-change audit", () => {
     expect(body).not.toContain(newOwnerId);
   });
 
-  it("does not write an activity when the owner remains unchanged", async () => {
+  it("keeps an inactive company owner assigned during an unchanged edit", async () => {
+    setupUpdate({ activeOwnerIds: [newOwnerId] });
+
     const response = await updateCompanyAction({}, companyForm(oldOwnerId));
 
     expect(response).toEqual({ ok: true });
-    expect(mocks.companyUpdate).toHaveBeenCalledOnce();
+    expect(mocks.companyUpdate).toHaveBeenCalledWith(expect.objectContaining({ owner_id: oldOwnerId }));
     expect(mocks.activityInsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects assigning an inactive company owner to a different record", async () => {
+    setupUpdate({ activeOwnerIds: [newOwnerId] });
+    const anotherInactiveOwnerId = "f4de4b8d-85c2-4f6a-bae8-50ce94755b8e";
+
+    const response = await updateCompanyAction({}, companyForm(anotherInactiveOwnerId));
+
+    expect(response).toEqual({ message: "Choose a member of this workspace." });
+    expect(mocks.companyUpdate).not.toHaveBeenCalled();
   });
 
   it("keeps the company update successful and warns when activity insertion fails", async () => {

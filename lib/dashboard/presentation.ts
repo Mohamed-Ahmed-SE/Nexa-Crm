@@ -1,5 +1,7 @@
 import { dashboardDateKey, dashboardDateStart, nextDashboardDate } from "@/lib/dashboard/calendar";
 import type { DashboardSummary, WorkspaceDashboardData } from "@/lib/dashboard/types";
+import { getDealAttentionReasons } from "@/lib/deals/attention";
+import { isStaleLead } from "@/lib/leads/attention";
 
 export function shapeWorkspaceDashboard(workspaceDashboard: WorkspaceDashboardData, now = new Date()): DashboardSummary {
   const { today, timeZone, currency, deals, leads, tasks, stages } = workspaceDashboard;
@@ -18,6 +20,7 @@ export function shapeWorkspaceDashboard(workspaceDashboard: WorkspaceDashboardDa
     dealsBySource: summarizeDealSources(deals),
     tasksToday: tasksDueToday(tasks, today, timeZone),
     attentionDeals: dealsNeedingAttention(openDeals, tasks, today, now),
+    attentionLeads: leadsNeedingAttention(workspaceDashboard.leadAttentionCandidates, workspaceDashboard.leadActivities, now),
   };
 }
 
@@ -52,11 +55,34 @@ function tasksDueToday(tasks: WorkspaceDashboardData["tasks"], today: string, ti
 
 function dealsNeedingAttention(openDeals: WorkspaceDashboardData["deals"], tasks: WorkspaceDashboardData["tasks"], today: string, now: Date) {
   const attentionDeals: DashboardSummary["attentionDeals"] = [];
+  const attentionTasks = tasks.map((task) => ({ relatedId: task.relatedId, dueAt: task.dueAt, status: "open" }));
   for (const deal of openDeals) {
-    if (deal.expectedCloseDate && deal.expectedCloseDate < today) attentionDeals.push({ deal, reason: "Expected close date has passed" });
-    else if (now.valueOf() - Date.parse(deal.createdAt) >= 14 * 86_400_000 && (!deal.lastActivityAt || now.valueOf() - Date.parse(deal.lastActivityAt) >= 14 * 86_400_000)) attentionDeals.push({ deal, reason: "No activity in the last 14 days" });
-    else if (!tasks.some((task) => task.relatedId === deal.id && Date.parse(task.dueAt) > now.valueOf())) attentionDeals.push({ deal, reason: "No future task scheduled" });
+    const [reason] = getDealAttentionReasons({ deal, tasks: attentionTasks, latestActivityAt: deal.lastActivityAt, today, now });
+    if (reason) attentionDeals.push({ deal, reason: attentionReasonLabel(reason) });
   }
   return attentionDeals.sort((first, second) => (first.deal.expectedCloseDate ?? "9999").localeCompare(second.deal.expectedCloseDate ?? "9999")).slice(0, 5);
+}
+
+function leadsNeedingAttention(
+  candidates: WorkspaceDashboardData["leadAttentionCandidates"],
+  activities: WorkspaceDashboardData["leadActivities"],
+  now: Date,
+): WorkspaceDashboardData["leadAttentionCandidates"] {
+  const latestActivityByLead = new Map<string, string>();
+  for (const activity of activities) {
+    const previousActivity = latestActivityByLead.get(activity.leadId);
+    if (!previousActivity || Date.parse(activity.occurredAt) > Date.parse(previousActivity)) {
+      latestActivityByLead.set(activity.leadId, activity.occurredAt);
+    }
+  }
+  return candidates.filter((lead) => isStaleLead({
+    lead, latestActivityAt: latestActivityByLead.get(lead.id) ?? null, now,
+  })).sort((first, second) => first.fullName.localeCompare(second.fullName));
+}
+
+function attentionReasonLabel(reason: ReturnType<typeof getDealAttentionReasons>[number]): string {
+  if (reason === "overdue-close") return "Expected close date has passed";
+  if (reason === "stale-activity") return "No activity in the last 14 days";
+  return "No future task scheduled";
 }
 

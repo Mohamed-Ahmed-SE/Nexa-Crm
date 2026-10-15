@@ -16,7 +16,7 @@ const text = (form: FormData, key: string) => { const formEntry = form.get(key);
 function parseContact(form: FormData) {
   return contactInputSchema.safeParse({
     firstName: text(form, "firstName"), lastName: text(form, "lastName"), email: text(form, "email"), phone: text(form, "phone"),
-    jobTitle: text(form, "jobTitle"), companyId: text(form, "companyId"), ownerId: text(form, "ownerId"),
+    address: text(form, "address"), jobTitle: text(form, "jobTitle"), companyId: text(form, "companyId"), ownerId: text(form, "ownerId"),
     lifecycleStatus: text(form, "lifecycleStatus"), linkedinUrl: text(form, "linkedinUrl"),
   });
 }
@@ -75,6 +75,7 @@ export async function createContactAction(_previous: ContactActionState, form: F
     last_name: parsed.data.lastName,
     email: parsed.data.email,
     phone: parsed.data.phone,
+    address: parsed.data.address,
     job_title: parsed.data.jobTitle,
     company_id: parsed.data.companyId,
     owner_id: ownerId,
@@ -251,6 +252,46 @@ export async function toggleContactNotePinnedAction(_previous: ContactActionStat
   if (updateError || !updatedNote) return { message: "Note could not be updated. Refresh the contact and try again." };
   revalidatePath(`/app/contacts/${contactId.data}`);
   return { ok: true, message: `Note ${note.is_pinned ? "unpinned" : "pinned"}.` };
+}
+
+async function modifiableContactNote(form: FormData, verb: "update" | "delete") {
+  const contactId = contactIdSchema.safeParse(text(form, "contactId"));
+  const noteId = contactIdSchema.safeParse(text(form, "noteId"));
+  if (!contactId.success || !noteId.success) return { supabase: null, message: "This note could not be identified." };
+  const { context, supabase, contact, error } = await editableContact(contactId.data);
+  if (error || !supabase || !contact) return { supabase: null, message: error ?? "Contact not found." };
+  const { data: note, error: lookupError } = await supabase.from("notes").select("id, created_by")
+    .eq("workspace_id", context.workspaceId).eq("related_entity_type", "contact")
+    .eq("related_entity_id", contactId.data).eq("id", noteId.data).maybeSingle();
+  if (lookupError || !note) return { supabase: null, message: `Note could not be ${verb}d. Refresh the contact and try again.` };
+  if (!hasWorkspacePermission(context.role, "crm.edit.all") && note.created_by !== context.userId) {
+    return { supabase: null, message: `You can ${verb} only your own notes.` };
+  }
+  return { context, supabase, contactId: contactId.data, noteId: noteId.data };
+}
+
+export async function updateContactNoteAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
+  const access = await modifiableContactNote(form, "update");
+  if (!access.supabase) return { message: access.message };
+  const parsed = contactNoteInputSchema.safeParse({ body: text(form, "body") });
+  if (!parsed.success) return { message: "Enter a note before saving.", fieldErrors: parsed.error.flatten().fieldErrors };
+  const { data: updatedNote, error: updateError } = await access.supabase.from("notes").update({ body: parsed.data.body })
+    .eq("workspace_id", access.context.workspaceId).eq("related_entity_type", "contact")
+    .eq("related_entity_id", access.contactId).eq("id", access.noteId).select("id").maybeSingle();
+  if (updateError || !updatedNote) return { message: "Note could not be updated. Refresh the contact and try again." };
+  revalidatePath(`/app/contacts/${access.contactId}`);
+  return { ok: true, message: "Note updated." };
+}
+
+export async function deleteContactNoteAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
+  const access = await modifiableContactNote(form, "delete");
+  if (!access.supabase) return { message: access.message };
+  const { data: deletedNote, error: deleteError } = await access.supabase.from("notes").delete()
+    .eq("workspace_id", access.context.workspaceId).eq("related_entity_type", "contact")
+    .eq("related_entity_id", access.contactId).eq("id", access.noteId).select("id").maybeSingle();
+  if (deleteError || !deletedNote) return { message: "Note could not be deleted. Refresh the contact and try again." };
+  revalidatePath(`/app/contacts/${access.contactId}`);
+  return { ok: true, message: "Note deleted." };
 }
 
 export async function createContactTaskAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {

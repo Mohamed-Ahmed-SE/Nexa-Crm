@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Building2, ContactRound, FilePlus2, Handshake, Search, UserRound, X } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { Building2, ContactRound, FilePlus2, Handshake, ListTodo, Search, StickyNote, UserRound, X } from "lucide-react";
 import { globalSearchAction } from "@/lib/search/actions";
 import { emptyGlobalSearchResults, type GlobalSearchItem, type GlobalSearchKind, type GlobalSearchResults } from "@/lib/search/global-search";
 
@@ -15,10 +16,24 @@ const groups: Array<{ key: GlobalSearchKind; label: string; icon: typeof UserRou
 const quickActions = [
   { label: "Add Lead", href: "/app/leads?create=1", icon: UserRound },
   { label: "Add Contact", href: "/app/contacts?create=1", icon: ContactRound },
+  { label: "Add Company", href: "/app/companies?create=1", icon: Building2 },
   { label: "Add Deal", href: "/app/deals?create=1", icon: FilePlus2 },
 ];
+const detailRoute = /^\/app\/(leads|contacts|companies|deals)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const entityTypes = { leads: "lead", contacts: "contact", companies: "company", deals: "deal" } as const;
 
 export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
+  const pathname = usePathname();
+  const routeMatch = pathname.match(detailRoute);
+  const recordContext = routeMatch ? { type: entityTypes[routeMatch[1] as keyof typeof entityTypes], id: routeMatch[2] } : null;
+  const taskIntent = routeMatch ? {
+    leads: "?createTask=1",
+    contacts: "?view=tasks&createTask=1",
+    companies: "?section=Tasks&createTask=1",
+    deals: "?createTask=1",
+  }[routeMatch[1] as keyof typeof entityTypes] : null;
+  const taskHref = recordContext && taskIntent ? `${pathname}${taskIntent}` : "/app/tasks?create=1";
+  const noteHref = recordContext ? `${pathname}?${routeMatch?.[1] === "companies" ? "section=Notes&" : ""}createNote=1` : null;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GlobalSearchResults>(emptyGlobalSearchResults);
@@ -143,7 +158,7 @@ export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
         </div>
         {canCreate && <nav aria-label="Quick create" className="global-search-actions">
           <span>Quick create</span>
-          {quickActions.map(({ label, href, icon: Icon }) => <Link href={href} key={label} onClick={close}><Icon aria-hidden="true" size={15} />{label}</Link>)}
+          {[...quickActions, { label: "Add Task", href: taskHref, icon: ListTodo }, ...(noteHref ? [{ label: "Add Note", href: noteHref, icon: StickyNote }] : [])].map(({ label, href, icon: Icon }) => <Link href={href} key={label} onClick={close}><Icon aria-hidden="true" size={15} />{label}</Link>)}
         </nav>}
         <p className="global-search-hint">Search is limited to records in your current workspace.</p>
       </section>

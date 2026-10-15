@@ -39,13 +39,17 @@ function mapCompany(company: Awaited<ReturnType<typeof fetchWorkspaceSearchRows>
 async function fetchWorkspaceSearchRows(supabase: Supabase, workspaceId: string, filters: ReturnType<typeof globalSearchFilters>) {
   const [leads, contacts, companies, deals] = await Promise.all([
     supabase.from("leads").select("id, full_name, company_name, job_title, email")
-      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.leads!).limit(resultLimit),
+      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.leads!)
+      .order("created_at", { ascending: false }).order("id", { ascending: true }).limit(resultLimit),
     supabase.from("contacts").select("id, first_name, last_name, email, job_title, companies(name)")
-      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.contacts!).limit(resultLimit),
+      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.contacts!)
+      .order("created_at", { ascending: false }).order("id", { ascending: true }).limit(resultLimit),
     supabase.from("companies").select("id, name, industry, website")
-      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.companies!).limit(resultLimit),
+      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.companies!)
+      .order("created_at", { ascending: false }).order("id", { ascending: true }).limit(resultLimit),
     supabase.from("deals").select("id, title, status, company:companies(name), primary_contact:contacts(first_name,last_name)")
-      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.deals!).limit(resultLimit),
+      .eq("workspace_id", workspaceId).is("archived_at", null).or(filters.deals!)
+      .order("created_at", { ascending: false }).order("id", { ascending: true }).limit(resultLimit),
   ]);
 
   if (leads.error || contacts.error || companies.error || deals.error) throw new Error("Unable to search records in this workspace.");

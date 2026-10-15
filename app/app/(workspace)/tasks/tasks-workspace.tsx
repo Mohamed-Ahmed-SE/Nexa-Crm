@@ -22,20 +22,21 @@ const allTaskColumnsVisible: Record<OptionalTaskColumn, boolean> = {
   Type: true, "Related to": true, "Due date": true, Assignee: true, Priority: true, Status: true,
 };
 
-export function TasksWorkspace({ tasks, owners, options, matchedCount, overview, params, railTasks, railTaskCount, calendarMonth, calendarTaskDates, railDate, completion, canCreate, canEdit, canReassign, canExport, currentUserId }: {
+export function TasksWorkspace({ tasks, owners, options, matchedCount, overview, params, railTasks, railTaskCount, calendarMonth, calendarTaskDates, railDate, completion, canCreate, createIntent, createContext, canEdit, canReassign, canExport, currentUserId }: {
   tasks: TaskRow[]; owners: TaskOwner[]; options: TaskOption[]; matchedCount: number; overview: TaskOverviewCounts; params: TaskSearchParams;
   railTasks: TaskRow[]; railTaskCount: number; calendarMonth: string; calendarTaskDates: string[]; railDate: string;
   completion: { open: number; completed: number; cancelled: number };
-  canCreate: boolean; canEdit: boolean; canReassign: boolean; canExport: boolean; currentUserId: string;
+  canCreate: boolean; createIntent: boolean; createContext: { type: TaskOption["type"]; id: string } | null; canEdit: boolean; canReassign: boolean; canExport: boolean; currentUserId: string;
 }) {
   const dateFormat = useDateFormat();
   const router = useRouter();
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(canCreate && createIntent);
   const [notice, setNotice] = useState("");
   const [noticeIsError, setNoticeIsError] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reschedulingTask, setReschedulingTask] = useState<TaskRow | null>(null);
   const [visibleColumns, setVisibleColumns] = useState(allTaskColumnsVisible);
+  useEffect(() => { if (!canCreate) setFormOpen(false); }, [canCreate]);
   const pageCount = Math.max(1, Math.ceil(matchedCount / taskPageSize));
   const { view, q, type, priority, sort, page, timeZone, timezoneOffset: currentTimezoneOffset, tomorrowTimezoneOffset: currentTomorrowTimezoneOffset, weekStartTimezoneOffset: currentWeekStartTimezoneOffset, nextWeekTimezoneOffset: currentNextWeekTimezoneOffset } = params;
   useEffect(() => {
@@ -114,7 +115,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
           <th data-label="Task title" scope="row"><strong>{task.title}</strong>{task.description && <small>{task.description}</small>}</th>
           {visibleColumns["Related to"] && <td data-label="Related to">{task.relation ? <Link href={relationHref(task.relation.type, task.relation.id)}>{task.relation.label}</Link> : task.related_entity_id ? <span className="tasks-muted">Related record unavailable</span> : <span className="tasks-muted">No linked record</span>}</td>}
           {visibleColumns["Due date"] && <td data-label="Due date">{task.due_at ? <time dateTime={task.due_at}>{formatDueDate(task.due_at, dateFormat)}</time> : <span className="tasks-muted">No due date</span>}{task.reminder_at && <small>Reminder: <time dateTime={task.reminder_at}>{formatDueDate(task.reminder_at, dateFormat)}</time></small>}</td>}
-          {visibleColumns.Assignee && <td data-label="Assignee">{task.assigned_to ? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>}
+          {visibleColumns.Assignee && <td data-label="Assignee">{task.assigned_to ? task.assigneeLabel ?? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>}
           {visibleColumns.Priority && <td data-label="Priority"><span className={`tasks-priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span></td>}
           {visibleColumns.Status && <td data-label="Status"><span className={`tasks-status status-${task.status}`}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span></td>}
           <td data-label="Actions">{canEdit && task.status === "open" && <div className="tasks-row-actions"><button aria-label={task.due_at ? `Reschedule ${task.title}` : `Set due date for ${task.title}`} className="tasks-secondary-button" onClick={() => setReschedulingTask(task)} type="button">{task.due_at ? "Reschedule" : "Set due date"}</button><button aria-label={`Complete ${task.title}`} className="tasks-complete-button" disabled={pendingId === task.id} onClick={() => complete(task.id)} type="button"><Check aria-hidden="true" size={14} />{pendingId === task.id ? "Completing…" : "Complete"}</button><button aria-label={`Cancel ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "cancel")} type="button">{pendingId === task.id ? "Cancelling…" : "Cancel"}</button></div>}{canEdit && task.status === "cancelled" && <div className="tasks-row-actions"><button aria-label={`Reopen ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "reopen")} type="button">{pendingId === task.id ? "Reopening…" : "Reopen"}</button></div>}</td>
@@ -127,7 +128,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
     </aside>
     </div>
     <p aria-live={noticeIsError ? "assertive" : "polite"} className="tasks-notice" role={noticeIsError ? "alert" : "status"}>{notice}</p>
-    {formOpen && <TaskForm currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} onClose={() => setFormOpen(false)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setFormOpen(false); router.refresh(); }} />}
+    {canCreate && formOpen && <TaskForm currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} initialContext={createContext} onClose={() => setFormOpen(false)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setFormOpen(false); router.refresh(); }} />}
     {reschedulingTask && <RescheduleTaskDialog task={reschedulingTask} onClose={() => setReschedulingTask(null)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setReschedulingTask(null); router.refresh(); }} />}
   </main>;
 }
@@ -224,12 +225,12 @@ function CompletionSummary({ counts }: { counts: { open: number; completed: numb
   </section>;
 }
 
-function TaskForm({ options, owners, canReassign, currentUserId, onClose, onSaved }: { options: TaskOption[]; owners: TaskOwner[]; canReassign: boolean; currentUserId: string; onClose: () => void; onSaved: (message: string) => void }) {
+function TaskForm({ options, owners, canReassign, currentUserId, initialContext, onClose, onSaved }: { options: TaskOption[]; owners: TaskOwner[]; canReassign: boolean; currentUserId: string; initialContext: { type: TaskOption["type"]; id: string } | null; onClose: () => void; onSaved: (message: string) => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [result, setResult] = useState<TaskActionState>(blankState);
   const [pending, startTransition] = useTransition();
-  const [relatedType, setRelatedType] = useState("");
-  const [relatedId, setRelatedId] = useState("");
+  const [relatedType, setRelatedType] = useState(initialContext?.type ?? "");
+  const [relatedId, setRelatedId] = useState(initialContext?.id ?? "");
   function submit(formData: FormData) {
     formData.set("relatedType", relatedType);
     formData.set("relatedId", relatedId);

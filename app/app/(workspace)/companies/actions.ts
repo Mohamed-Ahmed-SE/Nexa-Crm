@@ -91,7 +91,7 @@ export async function updateCompanyAction(_previous: CompanyActionState, form: F
   const { context, supabase, company } = access;
   const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
   if (!canReassign && parsed.data.ownerId !== company.owner_id) return { message: "You cannot change company ownership." };
-  if (!await verifyOwner(supabase, context.workspaceId, parsed.data.ownerId)) return { message: "Choose a member of this workspace." };
+  if (parsed.data.ownerId !== company.owner_id && !await verifyOwner(supabase, context.workspaceId, parsed.data.ownerId)) return { message: "Choose a member of this workspace." };
   const { error } = await supabase.from("companies").update(companyFields(parsed.data)).eq("workspace_id", context.workspaceId).eq("id", id.data);
   if (error) return { message: "Unable to update this company." };
   revalidatePath("/app/companies");
@@ -199,6 +199,47 @@ export async function toggleCompanyNotePinnedAction(_previous: CompanyActionStat
   if (updateError || !updatedNote) return { message: "Note could not be updated. Refresh the company and try again." };
   revalidatePath(`/app/companies/${companyId.data}`);
   return { ok: true, message: `Note ${note.is_pinned ? "unpinned" : "pinned"}.` };
+}
+
+async function modifiableCompanyNote(form: FormData, verb: "update" | "delete") {
+  const companyId = companyIdSchema.safeParse(value(form, "companyId"));
+  const noteId = companyIdSchema.safeParse(value(form, "noteId"));
+  if (!companyId.success || !noteId.success) return { supabase: null, message: "This note could not be identified." };
+  const access = await companyAccess(companyId.data);
+  if (!access.supabase || !access.company) return { supabase: null, message: access.message ?? "Company not found." };
+  const { context, supabase } = access;
+  const { data: note, error: lookupError } = await supabase.from("notes").select("id, created_by")
+    .eq("workspace_id", context.workspaceId).eq("related_entity_type", "company")
+    .eq("related_entity_id", companyId.data).eq("id", noteId.data).maybeSingle();
+  if (lookupError || !note) return { supabase: null, message: `Note could not be ${verb}d. Refresh the company and try again.` };
+  if (!hasWorkspacePermission(context.role, "crm.edit.all") && note.created_by !== context.userId) {
+    return { supabase: null, message: `You can ${verb} only your own notes.` };
+  }
+  return { context, supabase, companyId: companyId.data, noteId: noteId.data };
+}
+
+export async function updateCompanyNoteAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {
+  const access = await modifiableCompanyNote(form, "update");
+  if (!access.supabase) return { message: access.message };
+  const parsed = companyNoteSchema.safeParse({ body: value(form, "body") });
+  if (!parsed.success) return { message: "Enter a note before saving.", fieldErrors: parsed.error.flatten().fieldErrors };
+  const { data: updatedNote, error: updateError } = await access.supabase.from("notes").update({ body: parsed.data.body })
+    .eq("workspace_id", access.context.workspaceId).eq("related_entity_type", "company")
+    .eq("related_entity_id", access.companyId).eq("id", access.noteId).select("id").maybeSingle();
+  if (updateError || !updatedNote) return { message: "Note could not be updated. Refresh the company and try again." };
+  revalidatePath(`/app/companies/${access.companyId}`);
+  return { ok: true, message: "Note updated." };
+}
+
+export async function deleteCompanyNoteAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {
+  const access = await modifiableCompanyNote(form, "delete");
+  if (!access.supabase) return { message: access.message };
+  const { data: deletedNote, error: deleteError } = await access.supabase.from("notes").delete()
+    .eq("workspace_id", access.context.workspaceId).eq("related_entity_type", "company")
+    .eq("related_entity_id", access.companyId).eq("id", access.noteId).select("id").maybeSingle();
+  if (deleteError || !deletedNote) return { message: "Note could not be deleted. Refresh the company and try again." };
+  revalidatePath(`/app/companies/${access.companyId}`);
+  return { ok: true, message: "Note deleted." };
 }
 
 export async function createCompanyTaskAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {

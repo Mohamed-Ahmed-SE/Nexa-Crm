@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GlobalSearch } from "@/components/shell/global-search";
 import type { GlobalSearchResults } from "@/lib/search/global-search";
 
-const { globalSearchAction } = vi.hoisted(() => ({ globalSearchAction: vi.fn() }));
+const { globalSearchAction, pathname } = vi.hoisted(() => ({ globalSearchAction: vi.fn(), pathname: { current: "/app/dashboard" } }));
 vi.mock("@/lib/search/actions", () => ({ globalSearchAction }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn() }), usePathname: () => pathname.current }));
 
 const populatedResults: GlobalSearchResults = {
   lead: [{ id: "l1", name: "Ada Lovelace", type: "lead", context: "Founder · Analytical Engines", href: "/app/leads/l1" }],
@@ -16,6 +16,7 @@ const populatedResults: GlobalSearchResults = {
 };
 
 beforeEach(() => {
+  pathname.current = "/app/dashboard";
   globalSearchAction.mockReset();
   globalSearchAction.mockResolvedValue({ ok: true, results: populatedResults });
 });
@@ -78,14 +79,43 @@ describe("GlobalSearch", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Search could not be completed");
   });
 
-  it("offers only the existing create routes to users with create permission", async () => {
+  it("offers all create routes only to users with create permission", async () => {
     const user = userEvent.setup();
     render(<GlobalSearch canCreate={true} />);
     await user.click(screen.getByRole("button", { name: /Search CRM/ }));
     const actions = screen.getByRole("navigation", { name: "Quick create" });
     expect(within(actions).getByRole("link", { name: "Add Lead" })).toHaveAttribute("href", "/app/leads?create=1");
     expect(within(actions).getByRole("link", { name: "Add Contact" })).toHaveAttribute("href", "/app/contacts?create=1");
+    expect(within(actions).getByRole("link", { name: "Add Company" })).toHaveAttribute("href", "/app/companies?create=1");
     expect(within(actions).getByRole("link", { name: "Add Deal" })).toHaveAttribute("href", "/app/deals?create=1");
+    expect(within(actions).getByRole("link", { name: "Add Task" })).toHaveAttribute("href", "/app/tasks?create=1");
+    expect(within(actions).queryByRole("link", { name: "Add Note" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["leads", "?createTask=1", "?createNote=1"],
+    ["contacts", "?view=tasks&createTask=1", "?createNote=1"],
+    ["companies", "?section=Tasks&createTask=1", "?section=Notes&createNote=1"],
+    ["deals", "?createTask=1", "?createNote=1"],
+  ])("associates task and note create routes with a valid %s detail record", async (entity, taskQuery, noteQuery) => {
+    const detailPath = `/app/${entity}/83d8aaf1-c78e-41db-ae18-493f44c84b42`;
+    pathname.current = detailPath;
+    const user = userEvent.setup();
+    render(<GlobalSearch canCreate={true} />);
+    await user.click(screen.getByRole("button", { name: /Search CRM/ }));
+    const actions = screen.getByRole("navigation", { name: "Quick create" });
+    expect(within(actions).getByRole("link", { name: "Add Task" })).toHaveAttribute("href", `${detailPath}${taskQuery}`);
+    expect(within(actions).getByRole("link", { name: "Add Note" })).toHaveAttribute("href", `${detailPath}${noteQuery}`);
+  });
+
+  it("does not offer record-specific note creation for an invalid detail path", async () => {
+    pathname.current = "/app/deals/not-a-uuid";
+    const user = userEvent.setup();
+    render(<GlobalSearch canCreate={true} />);
+    await user.click(screen.getByRole("button", { name: /Search CRM/ }));
+    const actions = screen.getByRole("navigation", { name: "Quick create" });
+    expect(within(actions).queryByRole("link", { name: "Add Note" })).not.toBeInTheDocument();
+    expect(within(actions).getByRole("link", { name: "Add Task" })).toHaveAttribute("href", "/app/tasks?create=1");
   });
 
   it("ignores search shortcuts while focus is in an editable control", () => {

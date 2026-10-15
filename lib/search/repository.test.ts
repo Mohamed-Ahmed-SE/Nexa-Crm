@@ -20,6 +20,7 @@ function searchClient() {
       eq: () => builder,
       is: () => builder,
       or: () => builder,
+      order: () => builder,
       limit: () => builder,
       then: (resolve: (response: { data: unknown[]; error: null }) => unknown, reject: (error: unknown) => unknown) =>
         Promise.resolve({ data, error: null }).then(resolve, reject),

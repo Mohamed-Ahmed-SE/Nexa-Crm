@@ -1,5 +1,7 @@
 import "server-only";
 
+import { inactiveOwnerLabel, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
+
 import type { LeadSearchParams } from "@/lib/leads/schema";
 import { buildLeadSearchFilter, leadPageSize } from "@/lib/leads/schema";
 import { parsePersistedLeadView, type LeadViewSort } from "@/lib/leads/saved-view-schema";
@@ -17,6 +19,7 @@ export type LeadRow = {
   source_id: string | null;
   status: "new" | "contacted" | "qualified" | "unqualified" | "converted";
   owner_id: string | null;
+  ownerLabel?: string;
   estimated_value: number;
   currency: string;
   notes_summary: string | null;
@@ -25,7 +28,13 @@ export type LeadRow = {
   tags?: LeadTag[];
 };
 
-export type LeadDetail = { lead: LeadRow; source: string | null; ownerLabel: string | null };
+export type LeadActivity = { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; is_system_event: boolean };
+export type LeadTask = { id: string; title: string; description: string | null; task_type: string; status: string; priority: string; due_at: string | null; assigned_to: string | null };
+export type LeadNote = { id: string; body: string; created_by: string; created_at: string; is_pinned: boolean };
+export type LeadDetail = {
+  lead: LeadRow; source: string | null; ownerLabel: string | null; owners: LeadOwner[];
+  activities: LeadActivity[]; tasks: LeadTask[]; notes: LeadNote[];
+};
 
 export async function listWorkspaceLeadTags(supabase: Supabase, workspaceId: string): Promise<LeadTag[]> {
   const { data, error } = await supabase.from("tags").select("id, name, color_token")
@@ -57,6 +66,8 @@ async function getLeadOwnerLabel(supabase: Supabase, { workspaceId, userId, full
   });
   if (error) throw new Error("Unable to load this lead's owner.");
   const workspaceMembers = (data ?? []) as Array<{ user_id: string }>;
+  const inactiveIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, [ownerId]);
+  if (inactiveIds.has(ownerId)) return inactiveOwnerLabel(`Workspace member · ${ownerId.slice(0, 6)}`);
   if (!workspaceMembers.some(({ user_id }) => user_id === ownerId)) return null;
   return ownerId === userId ? fullName : `Workspace member · ${ownerId.slice(0, 6)}`;
 }
@@ -70,11 +81,35 @@ export async function getLeadDetail(supabase: Supabase, context: LeadDetailConte
   if (!leadResult.data) return null;
 
   const lead = leadResult.data as LeadRow;
-  const [source, ownerLabel] = await Promise.all([
+  const [source, ownerLabel, ownersResult, activitiesResult, tasksResult, notesResult] = await Promise.all([
     getLeadSourceName(supabase, workspaceId, lead.source_id),
     getLeadOwnerLabel(supabase, { ...context, ownerId: lead.owner_id }),
+    supabase.rpc("list_reassignable_workspace_members", {
+      target_workspace_id: workspaceId, target_user_id: null, target_lead_id: id,
+    }),
+    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, is_system_event")
+      .eq("workspace_id", workspaceId).eq("related_entity_type", "lead").eq("related_entity_id", id)
+      .order("occurred_at", { ascending: false }).limit(50),
+    supabase.from("tasks").select("id, title, description, task_type, status, priority, due_at, assigned_to")
+      .eq("workspace_id", workspaceId).eq("related_entity_type", "lead").eq("related_entity_id", id)
+      .order("due_at", { ascending: true, nullsFirst: false }).limit(50),
+    supabase.from("notes").select("id, body, created_by, created_at, is_pinned")
+      .eq("workspace_id", workspaceId).eq("related_entity_type", "lead").eq("related_entity_id", id)
+      .order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(50),
   ]);
-  return { lead, source, ownerLabel };
+  if (ownersResult.error || activitiesResult.error || tasksResult.error || notesResult.error) {
+    throw new Error("Unable to load this lead's engagement history.");
+  }
+  return {
+    lead, source, ownerLabel,
+    owners: (ownersResult.data ?? []).map(({ user_id }: { user_id: string }) => ({
+      id: user_id,
+      label: user_id === context.userId ? context.fullName : `Workspace member · ${user_id.slice(0, 6)}`,
+    })),
+    activities: (activitiesResult.data ?? []) as LeadActivity[],
+    tasks: (tasksResult.data ?? []) as LeadTask[],
+    notes: (notesResult.data ?? []) as LeadNote[],
+  };
 }
 
 export type LeadConversionStage = { id: string; name: string };
@@ -137,6 +172,8 @@ export async function listWorkspaceLeads(
   }
 
   if (params.status !== "all") recordsQuery = recordsQuery.eq("status", params.status);
+  if (params.createdFrom) recordsQuery = recordsQuery.gte("created_at", params.createdFrom);
+  if (params.createdTo) recordsQuery = recordsQuery.lte("created_at", params.createdTo);
   if (params.sourceId) recordsQuery = recordsQuery.eq("source_id", params.sourceId);
   if (params.ownerId === "unassigned") recordsQuery = recordsQuery.is("owner_id", null);
   else if (params.ownerId) recordsQuery = recordsQuery.eq("owner_id", params.ownerId);
@@ -166,6 +203,7 @@ export async function listWorkspaceLeads(
 
   const sources = sourcesResult.data ?? [];
   const leads = (recordsResult.data ?? []) as LeadRow[];
+  const inactiveOwnerIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, leads.map(({ owner_id }) => owner_id));
   const leadTags = await loadLeadTagsForRows(supabase, workspaceId, leads.map(({ id }) => id));
   const owners = (ownersResult.data ?? []).map(({ user_id }: { user_id: string }) => ({
     id: user_id,
@@ -173,7 +211,13 @@ export async function listWorkspaceLeads(
   }));
 
   return {
-    leads: leads.map((lead) => ({ ...lead, tags: leadTags.get(lead.id) ?? [] })),
+    leads: leads.map((lead) => ({
+      ...lead,
+      ownerLabel: lead.owner_id && inactiveOwnerIds.has(lead.owner_id)
+        ? inactiveOwnerLabel(`Workspace member · ${lead.owner_id.slice(0, 6)}`)
+        : undefined,
+      tags: leadTags.get(lead.id) ?? [],
+    })),
     totalCount: totalResult.count ?? 0,
     matchedCount: recordsResult.count ?? 0,
     newCount: newResult.count ?? 0,

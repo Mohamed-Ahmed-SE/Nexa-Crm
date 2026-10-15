@@ -123,6 +123,9 @@ begin
     insert into public.deals (workspace_id, pipeline_id, stage_id, title, company_id, primary_contact_id, amount, currency, probability, expected_close_date, owner_id, source_id, created_by)
     values (target_workspace_id, (conversion ->> 'pipelineId')::uuid, (conversion ->> 'stageId')::uuid, btrim(conversion ->> 'dealTitle'), company_id, contact_id, (conversion ->> 'dealValue')::numeric, (select w.default_currency from public.workspaces w where w.id = target_workspace_id), deal_stage_probability, deal_close_date, deal_owner_id, source_lead.source_id, actor_id)
     returning id into deal_id;
+     insert into public.activities (workspace_id, activity_type, subject, occurred_at, created_by, owner_id, related_entity_type, related_entity_id, metadata, is_system_event)
+     values (target_workspace_id, 'stage_changed', 'Deal created in initial stage', pg_catalog.now(), actor_id, actor_id, 'deal', deal_id,
+       jsonb_build_object('to_stage_id', conversion ->> 'stageId'), false);
   end if;
 
   -- Keep the lead timeline intact and copy it to each resulting entity in this transaction.

@@ -96,7 +96,7 @@ describe("duplicate deal action", () => {
       title: "Renewal opportunity (Copy)", company_id: companyId, primary_contact_id: contactId, amount: 12000,
       expected_close_date: "2026-08-15", owner_id: userId, priority: "high", description: "Expansion plan",
     });
-    expect(mocks.activityInsert).toHaveBeenCalledWith(expect.objectContaining({ activity_type: "record_created", subject: "Deal duplicated", related_entity_id: newDealId }));
+    expect(mocks.activityInsert).toHaveBeenCalledWith(expect.objectContaining({ activity_type: "record_created", subject: "Deal duplicated", related_entity_id: newDealId, metadata: { to_stage_id: stageId } }));
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/app/deals");
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/app/deals/${newDealId}`);
   });

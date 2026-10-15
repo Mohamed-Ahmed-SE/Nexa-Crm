@@ -18,6 +18,7 @@ export const contactInputSchema = z.object({
   lastName: z.string().trim().min(1, "Enter a last name.").max(100),
   email: z.union([z.string().trim().email().max(254), z.literal("")]).optional().transform((emailAddress) => emailAddress || null),
   phone: optionalText(50),
+  address: optionalText(500),
   jobTitle: optionalText(150),
   companyId: optionalUuid,
   ownerId: optionalUuid,

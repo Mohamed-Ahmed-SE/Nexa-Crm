@@ -8,7 +8,8 @@ import { TasksWorkspace } from "./tasks-workspace";
 export default async function TasksPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const context = await requirePermission("crm.view");
   const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
-  const parsedParams = parseTaskSearchParams(await searchParams);
+  const rawParams = await searchParams;
+  const parsedParams = parseTaskSearchParams(rawParams);
   const params = canReassign ? parsedParams : restrictAllTasksView(parsedParams);
   const supabase = await createSupabaseServerClient();
   if (!supabase) throw new Error("Supabase server client is unavailable.");
@@ -27,7 +28,14 @@ export default async function TasksPage({ searchParams }: { searchParams: Promis
     listTaskCalendarRecords(supabase, { workspaceId: context.workspaceId, userId: context.userId, canReassign, params, calendarMonth, now }),
     countTaskCompletionSummary(supabase, context.workspaceId, context.userId, canReassign),
   ]);
+  const requestedType = rawParams.relatedType;
+  const requestedId = rawParams.relatedId;
+  const requestedContext = typeof requestedType === "string" && typeof requestedId === "string"
+    ? options.find((option) => option.type === requestedType && option.id === requestedId) ?? null
+    : null;
+  const hasRequestedContext = requestedType !== undefined || requestedId !== undefined;
+  const createIntent = canCreate && rawParams.create === "1" && (!hasRequestedContext || requestedContext !== null);
   return <TasksWorkspace tasks={data.tasks} owners={data.owners} options={options} matchedCount={data.matchedCount} overview={overview} params={params}
     railTasks={rail.tasks} railTaskCount={rail.matchedCount} calendarMonth={calendarMonth} calendarTaskDates={calendarRecords} railDate={railDate} completion={completion}
-    canCreate={canCreate} canEdit={hasWorkspacePermission(context.role, "crm.edit.own")} canReassign={canReassign} canExport={hasWorkspacePermission(context.role, "data.export")} currentUserId={context.userId} />;
+    canCreate={canCreate} createIntent={createIntent} createContext={requestedContext ? { type: requestedContext.type, id: requestedContext.id } : null} canEdit={hasWorkspacePermission(context.role, "crm.edit.own")} canReassign={canReassign} canExport={hasWorkspacePermission(context.role, "data.export")} currentUserId={context.userId} />;
 }

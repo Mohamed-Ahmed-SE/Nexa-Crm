@@ -47,6 +47,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     tags={tags}
     currentUserId={context.userId}
     currency={data.currency}
+    createdFrom={activeParams.createdFrom}
+    createdTo={activeParams.createdTo}
     leads={data.leads}
     matchedCount={data.matchedCount}
     newCount={data.newCount}

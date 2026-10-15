@@ -39,7 +39,7 @@ Critical journeys:
 8. create contact/company
 9. search
 10. filter list
-11. invite user if test environment supports it
+11. On local Supabase, create an invitation through the workspace UI, reject an authenticated mismatched email without consuming it, accept with the invited account and verify its member role and accepted status, then verify accepted-link reuse and revocation rejection.
 12. permissions rejection
 13. CSV import
 

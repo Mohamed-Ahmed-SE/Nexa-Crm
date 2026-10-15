@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(27);
+select plan(28);
 
 insert into auth.users (id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -82,6 +82,7 @@ select is(
 select is((select status from public.leads where id='e1300000-0000-4000-8000-000000000001'), 'converted', 'original lead is retained as converted');
 select is((select count(*)::integer from public.contacts c join public.leads l on l.converted_contact_id=c.id where l.id='e1300000-0000-4000-8000-000000000001' and c.workspace_id=l.workspace_id and c.company_id=l.converted_company_id), 1, 'converted contact and company IDs link within workspace');
 select is((select count(*)::integer from public.deals d join public.leads l on l.converted_deal_id=d.id where l.id='e1300000-0000-4000-8000-000000000001' and d.workspace_id=l.workspace_id and d.company_id=l.converted_company_id and d.primary_contact_id=l.converted_contact_id and d.currency='EUR'), 1, 'converted deal links to the new targets and workspace currency');
+select is((select count(*)::integer from public.activities a join public.leads l on l.converted_deal_id=a.related_entity_id join public.deals d on d.id=l.converted_deal_id where l.id='e1300000-0000-4000-8000-000000000001' and a.workspace_id=l.workspace_id and a.related_entity_type='deal' and a.activity_type='stage_changed' and a.metadata->>'to_stage_id'=d.stage_id::text), 1, 'converted deal has one stage entry matching its actual stage');
 select is((select count(*)::integer from public.deals d join public.leads l on l.converted_deal_id=d.id where l.id='e1300000-0000-4000-8000-000000000001' and d.owner_id='e1100000-0000-4000-8000-000000000002'), 1, 'deal is assigned to the requested active workspace member');
 select is((select count(*)::integer from public.contacts c join public.leads l on l.converted_contact_id=c.id where l.id='e1300000-0000-4000-8000-000000000001' and c.owner_id='e1100000-0000-4000-8000-000000000001'), 1, 'contact ownership remains with the converting user');
 select is((select count(*)::integer from public.companies c join public.leads l on l.converted_company_id=c.id where l.id='e1300000-0000-4000-8000-000000000001' and c.owner_id='e1100000-0000-4000-8000-000000000001'), 1, 'company ownership remains with the converting user');

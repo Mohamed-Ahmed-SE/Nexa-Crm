@@ -1,5 +1,6 @@
 import "server-only";
-import { buildCompanySearchFilter, companyPageSize, escapeCompanySearchTerm, type CompanySearchParams } from "@/lib/companies/schema";
+import { inactiveOwnerLabel, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
+import { buildCompanySearchFilter, companyPageSize, companySortOrder, escapeCompanySearchTerm, parsePersistedCompanyView, type CompanySearchParams, type CompanyViewColumn, type CompanyViewSort } from "@/lib/companies/schema";
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof import("@/lib/supabase/server").createSupabaseServerClient>>>;
 type CompanyRecord = {
@@ -43,7 +44,9 @@ export async function listCompanyOptions(supabase: Supabase, workspaceId: string
 export async function listWorkspaceCompanies(supabase: Supabase, workspaceId: string, userId: string, fullName: string, params: CompanySearchParams) {
   const start = (params.page - 1) * companyPageSize;
   let query = supabase.from("companies").select("id, workspace_id, name, website, industry, employee_size, phone, address_line_1, address_line_2, city, state, postal_code, country, description, owner_id, created_at, updated_at, archived_at", { count: "exact" })
-    .eq("workspace_id", workspaceId).is("archived_at", null).order("name").range(start, start + companyPageSize - 1);
+    .eq("workspace_id", workspaceId).is("archived_at", null);
+  for (const order of companySortOrder(params.sort)) query = query.order(order.column, { ascending: order.ascending });
+  query = query.range(start, start + companyPageSize - 1);
   if (params.ownerId === "unassigned") query = query.is("owner_id", null);
   else if (params.ownerId) query = query.eq("owner_id", params.ownerId);
   if (params.q) {
@@ -70,6 +73,7 @@ export async function listWorkspaceCompanies(supabase: Supabase, workspaceId: st
     supabase.from("tasks").select("related_entity_id, due_at").eq("workspace_id", workspaceId).eq("related_entity_type", "company").eq("status", "open").in("related_entity_id", companyIds).not("due_at", "is", null).gte("due_at", new Date().toISOString()).order("due_at"),
   ]) : [];
   assertQueries(related);
+  const inactiveOwnerIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, companies.map(({ owner_id }) => owner_id));
   const contactCounts = new Map<string, number>();
   for (const contact of (related[0]?.data ?? []) as { company_id: string | null }[]) if (contact.company_id) contactCounts.set(contact.company_id, (contactCounts.get(contact.company_id) ?? 0) + 1);
   const deals = (related[1]?.data ?? []) as { company_id: string | null; amount: number; currency: string }[];
@@ -88,12 +92,33 @@ export async function listWorkspaceCompanies(supabase: Supabase, workspaceId: st
   return {
     companies: companies.map((company) => {
       const dealsForCompany = dealMetrics.get(company.id);
-      return { ...company, ownerLabel: ownerLabel(company.owner_id, owners), contactsCount: contactCounts.get(company.id) ?? 0, openDealsCount: dealsForCompany?.count ?? 0, openPipelineValue: dealsForCompany?.value ?? 0, currency: dealsForCompany?.currency ?? "USD", lastActivity: latestActivity.get(company.id) ?? null, nextActivity: nextTask.get(company.id) ?? null };
+      return { ...company, ownerLabel: company.owner_id && inactiveOwnerIds.has(company.owner_id)
+         ? inactiveOwnerLabel(ownerLabel(company.owner_id, owners))
+         : ownerLabel(company.owner_id, owners), contactsCount: contactCounts.get(company.id) ?? 0, openDealsCount: dealsForCompany?.count ?? 0, openPipelineValue: dealsForCompany?.value ?? 0, currency: dealsForCompany?.currency ?? "USD", lastActivity: latestActivity.get(company.id) ?? null, nextActivity: nextTask.get(company.id) ?? null };
     }) as CompanyListRow[],
     matchedCount: records.count ?? 0,
     totalCount: total.count ?? 0,
     owners,
   };
+}
+
+export type CompanySavedView = {
+  id: string;
+  name: string;
+  filters: Pick<CompanySearchParams, "q" | "ownerId">;
+  sort: CompanyViewSort;
+  visibleColumns: CompanyViewColumn[];
+};
+
+export async function listCompanySavedViews(supabase: Supabase, workspaceId: string, userId: string): Promise<CompanySavedView[]> {
+  const { data, error } = await supabase.from("saved_views")
+    .select("id, name, filters, sort, visible_columns")
+    .eq("workspace_id", workspaceId).eq("user_id", userId).eq("entity_type", "companies").order("name");
+  if (error) throw new Error("Unable to load saved company views.");
+  return (data ?? []).flatMap((row) => {
+    const parsed = parsePersistedCompanyView(row);
+    return parsed ? [{ id: row.id, name: row.name, ...parsed }] : [];
+  });
 }
 
 export async function getCompany(supabase: Supabase, workspaceId: string, id: string, includeArchived = false) {
@@ -116,10 +141,13 @@ export async function getCompanyDetail(supabase: Supabase, workspaceId: string, 
   if (companyResult.error) throw new Error("Unable to load this company.");
   if (!companyResult.data) return null;
   assertQueries([contacts, deals, activities, tasks, notes, attachments, ownersResult]);
+  const inactiveOwnerIds = await listInactiveWorkspaceMemberIds(supabase, workspaceId, [companyResult.data.owner_id]);
   const owners = ((ownersResult.data ?? []) as { user_id: string }[]).map(({ user_id }) => ({ id: user_id, label: `Workspace member · ${user_id.slice(0, 6)}` }));
   return {
     company: companyResult.data as CompanyRecord,
-    ownerLabel: ownerLabel(companyResult.data.owner_id, owners),
+    ownerLabel: companyResult.data.owner_id && inactiveOwnerIds.has(companyResult.data.owner_id)
+      ? inactiveOwnerLabel(ownerLabel(companyResult.data.owner_id, owners))
+      : ownerLabel(companyResult.data.owner_id, owners),
     contacts: contacts.data ?? [], deals: (deals.data ?? []) as unknown as CompanyDetail["deals"], activities: activities.data ?? [],
     tasks: tasks.data ?? [], notes: notes.data ?? [], attachments: attachments.data ?? [],
   };

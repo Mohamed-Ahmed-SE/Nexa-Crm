@@ -5,14 +5,18 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Download, LayoutGrid, List, Plus, Search, X } from "lucide-react";
 import { createDealAction, duplicateDealAction, moveDealStageAction, updateDealAction, type DealActionResult } from "./actions";
-import type { DealOwner, DealRow, DealStage, DealsData } from "@/lib/deals/repository";
-import { getOwnerInitials, isDealOverdue } from "@/lib/deals/presentation";
+import type { DealOwner, DealRow, DealStage, DealTag, DealsData } from "@/lib/deals/repository";
+import { getOwnerInitials } from "@/lib/deals/presentation";
+import type { DealAttentionReason } from "@/lib/deals/attention";
+import { formatNextTask, type DealNextTask } from "@/lib/deals/next-tasks";
 import { useCreateIntent } from "../use-create-intent";
 import { useDateFormat } from "@/components/auth/date-format-provider";
 import { formatCalendarDate, type DateFormat } from "@/lib/preferences/date-format";
 
 type Props = {
   data: DealsData;
+  nextTasks: Record<string, DealNextTask>;
+  attentionReasons: Record<string, DealAttentionReason[]>;
   canCreate: boolean;
   canExport: boolean;
   canEditOwn: boolean;
@@ -21,7 +25,9 @@ type Props = {
   currentUserId: string;
   search: string;
   ownerFilter: string;
-  todayIso: string;
+  statusFilter: "all" | "open" | "won" | "lost";
+  wonFrom: string;
+  wonTo: string;
   view: "board" | "list";
   createIntent: boolean;
 };
@@ -45,23 +51,40 @@ function ownerLabel(owners: DealOwner[], ownerId: string | null) {
   return ownerId ? owners.find(({ id }) => id === ownerId)?.label ?? "Workspace member" : "Unassigned";
 }
 
-function OwnerDisplay({ owners, ownerId }: { owners: DealOwner[]; ownerId: string | null }) {
-  const label = ownerLabel(owners, ownerId);
+function OwnerDisplay({ owners, ownerId, displayLabel }: { owners: DealOwner[]; ownerId: string | null; displayLabel?: string }) {
+  const label = displayLabel ?? ownerLabel(owners, ownerId);
   return <span className="deals-owner"><span aria-hidden="true" className="deals-owner-avatar">{ownerId ? getOwnerInitials(label) : "—"}</span><span className="deals-owner-name">{label}</span></span>;
 }
 
-function DealAttention({ deal, todayIso }: { deal: DealRow; todayIso: string }) {
-  const dateFormat = useDateFormat();
-  if (!isDealOverdue(deal.status, deal.expected_close_date, todayIso)) return null;
-  return <span aria-label={`Attention needed: expected close date ${shortDate(deal.expected_close_date, dateFormat)} is overdue`} className="deals-attention" role="note"><AlertCircle aria-hidden="true" size={12} /><span>Overdue</span></span>;
+function DealTags({ tags = [] }: { tags?: DealTag[] }) {
+  return tags.length ? <span aria-label="Tags" className="contact-tag-list">{tags.map((tag) => <span className="contact-tag" key={tag.id}>{tag.name}</span>)}</span> : <span>—</span>;
 }
 
-function DealForm({ deal, data, canReassign, currentUserId, onClose }: {
+const attentionLabels: Record<DealAttentionReason, string> = {
+  "overdue-close": "Overdue close",
+  "stale-activity": "Stale activity",
+  "no-future-task": "No future task",
+};
+const attentionDescriptions: Record<DealAttentionReason, string> = {
+  "overdue-close": "Expected close date has passed",
+  "stale-activity": "No activity in the last 14 days",
+  "no-future-task": "No future task scheduled",
+};
+
+function DealAttention({ reasons }: { reasons: DealAttentionReason[] }) {
+  if (!reasons.length) return null;
+  const labels = reasons.map((reason) => attentionLabels[reason]);
+  const descriptions = reasons.map((reason) => attentionDescriptions[reason]);
+  return <span aria-label={`Attention needed: ${descriptions.join(", ")}`} className="deals-attention" role="note"><AlertCircle aria-hidden="true" size={12} /><span>{labels.join(" · ")}</span></span>;
+}
+
+function DealForm({ deal, data, canReassign, currentUserId, onClose, onTagSaveWarning }: {
   deal: DealRow | null;
   data: DealsData;
   canReassign: boolean;
   currentUserId: string;
   onClose: () => void;
+  onTagSaveWarning: (message: string) => void;
 }) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -84,7 +107,11 @@ function DealForm({ deal, data, canReassign, currentUserId, onClose }: {
     startTransition(async () => {
       const next = deal ? await updateDealAction(formData) : await createDealAction(formData);
       setResult(next);
-      if (next.ok) { onClose(); router.refresh(); }
+      if (next.ok) {
+        if (next.tagWarning) onTagSaveWarning(next.message);
+        onClose();
+        router.refresh();
+      }
     });
   }
 
@@ -100,35 +127,36 @@ function DealForm({ deal, data, canReassign, currentUserId, onClose }: {
         <label className="deals-field">Deal value<input defaultValue={deal?.amount ?? 0} min="0" name="amount" required step="0.01" type="number" />{errors.amount?.[0] && <span>{errors.amount[0]}</span>}</label>
         <label className="deals-field">Expected close<input defaultValue={deal?.expected_close_date ?? ""} name="expectedCloseDate" type="date" />{errors.expectedCloseDate?.[0] && <span>{errors.expectedCloseDate[0]}</span>}</label>
         <label className="deals-field">Priority<select defaultValue={deal?.priority ?? "medium"} name="priority"><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
-        {canReassign ? <label className="deals-field">Owner<select defaultValue={deal ? deal.owner_id ?? "" : currentUserId} name="ownerId"><option value="">Unassigned</option>{data.owners.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select>{errors.ownerId?.[0] && <span>{errors.ownerId[0]}</span>}</label> : <input name="ownerId" type="hidden" value={deal?.owner_id ?? currentUserId} />}
+        {canReassign ? <label className="deals-field">Owner<select defaultValue={deal ? deal.owner_id ?? "" : currentUserId} name="ownerId"><option value="">Unassigned</option>{deal?.owner_id && !data.owners.some((owner) => owner.id === deal.owner_id) && <option value={deal.owner_id}>Current owner · Inactive user</option>}{data.owners.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select>{errors.ownerId?.[0] && <span>{errors.ownerId[0]}</span>}</label> : <input name="ownerId" type="hidden" value={deal?.owner_id ?? currentUserId} />}
       </div>
       <label className="deals-field">Notes<textarea defaultValue={deal?.description ?? ""} maxLength={2000} name="description" rows={3} /></label>
+      <fieldset className="deals-field"><legend>Tags</legend>{data.tags.length ? data.tags.map((tag) => <label key={tag.id}><input defaultChecked={deal?.tags?.some(({ id }) => id === tag.id)} name="tagIds" type="checkbox" value={tag.id} /> {tag.name}</label>) : <span>No workspace tags available.</span>}</fieldset>
       {!result.ok && result.message && <p className="deals-form-error" role="alert">{result.message}</p>}
       <footer className="deals-form-actions"><button className="deals-button deals-button-secondary" disabled={pending} onClick={onClose} type="button">Cancel</button><button className="deals-button deals-button-primary" disabled={pending} type="submit">{pending ? "Saving…" : deal ? "Save changes" : "Add deal"}</button></footer>
     </form>
   </dialog>;
 }
 
-function DealCard({ deal, stages, data, canEdit, canDuplicate, moving, onEdit, onMove, onDrag, onDuplicate, todayIso }: {
-  deal: DealRow; stages: DealStage[]; data: DealsData; canEdit: boolean; canDuplicate: boolean; moving: boolean; todayIso: string;
+function DealCard({ deal, stages, data, nextTask, attentionReasons, canEdit, canDuplicate, moving, onEdit, onMove, onDrag, onDuplicate }: {
+  deal: DealRow; stages: DealStage[]; data: DealsData; nextTask?: DealNextTask; attentionReasons: DealAttentionReason[]; canEdit: boolean; canDuplicate: boolean; moving: boolean;
   onEdit: () => void; onMove: (stageId: string) => void; onDrag: (dealId: string) => void; onDuplicate: () => void;
 }) {
   const dateFormat = useDateFormat();
   const [dragging, setDragging] = useState(false);
   const company = deal.company?.name;
   const primaryContact = deal.contact?.name;
-  const moveOptions = stages.filter(({ stage_type }) => stage_type === "open");
+  const moveOptions = stages.filter(({ stage_type, pipeline_id }) => stage_type === "open" && pipeline_id === deal.pipeline_id);
   return <article aria-label={`${deal.title}${company ? `, ${company}` : ""}${primaryContact ? `, primary contact ${primaryContact}` : ""}, ${money(Number(deal.amount), deal.currency)}`} className={`deals-card${dragging ? " is-dragging" : ""}${moving ? " is-pending" : ""}`} draggable={canEdit && deal.status === "open" && !moving} onDragEnd={() => setDragging(false)} onDragStart={(event) => { setDragging(true); onDrag(deal.id); event.dataTransfer.setData("text/plain", deal.id); event.dataTransfer.effectAllowed = "move"; }}>
-    <div className="deals-card-top"><div className="deals-card-name-actions"><button className="deals-card-title" onClick={onEdit} type="button" disabled={!canEdit}>{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div><div className="deals-card-indicators"><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span><DealAttention deal={deal} todayIso={todayIso} /></div></div>
-    {(company || primaryContact) && <div className="deals-card-relations">{company && <p>{company}</p>}{primaryContact && <p>Contact: {primaryContact}</p>}</div>}
+    <div className="deals-card-top"><div className="deals-card-name-actions"><button className="deals-card-title" onClick={onEdit} type="button" disabled={!canEdit}>{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div><div className="deals-card-indicators"><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span><DealAttention reasons={attentionReasons} /></div></div>
+    {(company || primaryContact || nextTask || deal.tags?.length) && <div className="deals-card-relations">{company && <p>{company}</p>}{primaryContact && <p>Contact: {primaryContact}</p>}{nextTask && <p>Next task: {formatNextTask(nextTask, dateFormat)}</p>}{deal.tags?.length ? <DealTags tags={deal.tags} /> : null}</div>}
     <div className="deals-card-value"><strong>{money(Number(deal.amount), deal.currency)}</strong><span>{deal.probability}% likely</span></div>
-    <div className="deals-card-meta"><span>{shortDate(deal.expected_close_date, dateFormat)}</span><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></div>
+    <div className="deals-card-meta"><span>{shortDate(deal.expected_close_date, dateFormat)}</span><OwnerDisplay displayLabel={deal.ownerLabel} ownerId={deal.owner_id} owners={data.owners} /></div>
     <label className="deals-move-control">Move to<select aria-label={`Move ${deal.title} to stage`} disabled={!canEdit || moving || deal.status !== "open"} onChange={(event) => { if (event.target.value) onMove(event.target.value); event.target.value = ""; }} value=""><option value="">Choose stage…</option>{moveOptions.filter(({ id }) => id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></label>
      {canDuplicate && <button className="deals-button deals-button-secondary" disabled={moving} onClick={onDuplicate} type="button">Duplicate</button>}
    </article>;
 }
 
-export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEditAll, canReassign, currentUserId, search, ownerFilter, todayIso, view, createIntent }: Props) {
+export function DealsWorkspace({ data, nextTasks, attentionReasons, canCreate, canExport, canEditOwn, canEditAll, canReassign, currentUserId, search, ownerFilter, statusFilter, wonFrom, wonTo, view, createIntent }: Props) {
   const dateFormat = useDateFormat();
   const router = useRouter();
   const [deals, setDeals] = useState(data.deals);
@@ -145,13 +173,13 @@ export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEdit
   const canEdit = (deal: DealRow) => canEditAll || (canEditOwn && deal.owner_id === currentUserId);
   const totals = useMemo(() => stages.map((stage) => {
     const stageDeals = deals.filter((deal) => deal.stage_id === stage.id);
-    return { ...stage, deals: stageDeals, total: moneyByCurrency(stageDeals) };
-  }), [deals, stages]);
+    return { ...stage, title: data.pipelineId === "all" ? `${pipelineName(data.pipelines, stage.pipeline_id)} · ${stage.name}` : stage.name, deals: stageDeals, total: moneyByCurrency(stageDeals) };
+  }), [data.pipelineId, data.pipelines, deals, stages]);
 
   function move(dealId: string, destinationId: string) {
     const current = deals.find((deal) => deal.id === dealId);
     const target = stages.find((stage) => stage.id === destinationId);
-    if (!current || !target || target.stage_type !== "open" || current.stage_id === destinationId || !canEdit(current)) return;
+    if (!current || !target || target.stage_type !== "open" || target.pipeline_id !== current.pipeline_id || current.stage_id === destinationId || !canEdit(current)) return;
     const previous = current;
     setPendingIds((ids) => new Set(ids).add(dealId));
     setNotice("");
@@ -184,45 +212,55 @@ export function DealsWorkspace({ data, canCreate, canExport, canEditOwn, canEdit
   }
 
   const editDeal = (deal: DealRow) => { if (canEdit(deal) && deal.status === "open") setFormDeal(deal); };
-  const tableDeals = deals.filter((deal) => stages.some((stage) => stage.id === deal.stage_id));
+  const hasNarrowingFilter = Boolean(search || ownerFilter || statusFilter !== "all" || wonFrom || wonTo);
+  const clearLinkFilters = { pipeline: data.pipelineId, q: search, owner: ownerFilter, status: statusFilter, wonFrom, wonTo };
+  const tableDeals = view === "list" ? deals : deals.filter((deal) => stages.some((stage) => stage.id === deal.stage_id));
 
   return <div className="page-container deals-page">
-    <header className="deals-header"><div><h1 className="page-title">Deals</h1><p className="page-description">Move active opportunities through your sales pipeline.</p></div><div className="deals-header-actions">{canExport && <a className="deals-button deals-button-secondary" href={exportHref(data.pipelineId, search, ownerFilter)}><Download aria-hidden="true" size={15} /> Export CSV</a>}<button className="deals-button deals-button-primary" disabled={!canCreate || !data.pipelineId || !stages.some(({ stage_type }) => stage_type === "open")} onClick={() => setFormDeal(null)} type="button"><Plus size={16} /> Add Deal</button></div></header>
+    <header className="deals-header"><div><h1 className="page-title">Deals</h1><p className="page-description">Move active opportunities through your sales pipeline.</p></div><div className="deals-header-actions">{canExport && <a className="deals-button deals-button-secondary" href={dealHref("/app/deals/export", { pipeline: data.pipelineId, q: search, owner: ownerFilter, status: statusFilter, wonFrom, wonTo })}><Download aria-hidden="true" size={15} /> Export CSV</a>}<button className="deals-button deals-button-primary" disabled={!canCreate || !data.pipelineId || data.pipelineId === "all" || !stages.some(({ stage_type }) => stage_type === "open")} onClick={() => setFormDeal(null)} type="button"><Plus size={16} /> Add Deal</button></div></header>
     <form action="/app/deals" className="deals-toolbar" method="get">
       <label className="deals-search"><span className="sr-only">Search deals</span><input defaultValue={search} maxLength={100} name="q" placeholder="Search deals by name…" /><button aria-label="Search deals" className="deals-search-submit" type="submit"><Search size={15} /></button></label>
-      <label className="deals-filter"><span>Pipeline</span><select defaultValue={data.pipelineId} name="pipeline" onChange={(event) => event.currentTarget.form?.requestSubmit()}>{data.pipelines.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></label>
-      <label className="deals-filter"><span>Owner</span><select defaultValue={ownerFilter} name="owner" onChange={(event) => event.currentTarget.form?.requestSubmit()}><option value="">All owners</option><option value="unassigned">Unassigned</option>{data.owners.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select></label>
-      <input name="view" type="hidden" value={view} />
-      <div aria-label="Deal view" className="deals-view-switch" role="group"><a aria-current={view === "board" ? "page" : undefined} aria-label="Board view" className={view === "board" ? "is-current" : ""} href={viewHref("board", data.pipelineId, search, ownerFilter)}><LayoutGrid size={16} /><span>Board</span></a><a aria-current={view === "list" ? "page" : undefined} aria-label="List view" className={view === "list" ? "is-current" : ""} href={viewHref("list", data.pipelineId, search, ownerFilter)}><List size={16} /><span>List</span></a></div>
+      <label className="deals-filter"><span>Pipeline</span><select defaultValue={data.pipelineId} name="pipeline" onChange={(event) => event.currentTarget.form?.requestSubmit()}><option value="all">All pipelines</option>{data.pipelines.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></label>
+      <label className="deals-filter"><span>Status</span><select defaultValue={statusFilter} name="status" onChange={(event) => event.currentTarget.form?.requestSubmit()}><option value="all">All statuses</option><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option></select></label>
+       <label className="deals-filter"><span>Owner</span><select defaultValue={ownerFilter} name="owner" onChange={(event) => event.currentTarget.form?.requestSubmit()}><option value="">All owners</option><option value="unassigned">Unassigned</option>{data.owners.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select></label>
+      <input name="wonFrom" type="hidden" value={wonFrom} /><input name="wonTo" type="hidden" value={wonTo} /><input name="view" type="hidden" value={view} />
+      {(data.pipelineId === "all" || statusFilter !== "all" || wonFrom || wonTo) && <div aria-label="Active filters" className="deals-filter-context" role="group">
+        {data.pipelineId === "all" && <span>Pipeline: All pipelines <a aria-label="Clear pipeline filter" href={dealHref("/app/deals", { ...clearLinkFilters, pipeline: "" }, view)}>Clear</a></span>}
+        {statusFilter !== "all" && <span>Status: {statusFilter[0].toUpperCase() + statusFilter.slice(1)} <a aria-label="Clear status filter" href={dealHref("/app/deals", { ...clearLinkFilters, status: "" }, view)}>Clear</a></span>}
+        {(wonFrom || wonTo) && <span>Won date range (end exclusive): {wonFrom || "—"} – {wonTo || "—"} <a href={dealHref("/app/deals", { ...clearLinkFilters, wonFrom: "", wonTo: "" }, view)}>Clear date range</a></span>}
+      </div>}
+      <div aria-label="Deal view" className="deals-view-switch" role="group"><a aria-current={view === "board" ? "page" : undefined} aria-label="Board view" className={view === "board" ? "is-current" : ""} href={dealHref("/app/deals", { pipeline: data.pipelineId, q: search, owner: ownerFilter, status: statusFilter, wonFrom, wonTo }, "board")}><LayoutGrid size={16} /><span>Board</span></a><a aria-current={view === "list" ? "page" : undefined} aria-label="List view" className={view === "list" ? "is-current" : ""} href={dealHref("/app/deals", { pipeline: data.pipelineId, q: search, owner: ownerFilter, status: statusFilter, wonFrom, wonTo }, "list")}><List size={16} /><span>List</span></a></div>
     </form>
 
     {notice && <p className="deals-notice" role="status">{notice}</p>}
-    {!data.pipelineId ? <section className="deals-empty"><h2>No pipeline yet</h2><p>Create a pipeline in workspace settings before adding deals.</p></section> : !stages.length ? <section className="deals-empty"><h2>No active deal stages</h2><p>Activate an open stage in pipeline settings before adding or moving deals.</p></section> : !tableDeals.length ? <section className="deals-empty"><h2>{search || ownerFilter ? "No matching deals" : "Your pipeline is clear"}</h2><p>{search || ownerFilter ? "Try another search or owner filter." : "New deals will appear here when they are added to this pipeline."}</p>{canCreate && !search && !ownerFilter && <button className="deals-button deals-button-secondary" onClick={() => setFormDeal(null)} type="button"><Plus size={15} /> Add the first deal</button>}</section> : view === "board" ? <section aria-label={`${data.pipelines.find(({ id }) => id === data.pipelineId)?.name ?? "Pipeline"} stages`} className="deals-board" onDragEnd={() => setDragDeal(null)}>
-      {totals.map((stage) => <div aria-label={`${stage.name}, ${stage.deals.length} deals`} className={`deals-stage stage-${stage.stage_type}`} key={stage.id} onDragOver={(event) => { if (dragDeal && stage.stage_type === "open") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain") || dragDeal; if (id && stage.stage_type === "open") move(id, stage.id); setDragDeal(null); }}>
-        <header className="deals-stage-header"><div><span className="deals-stage-indicator" /><h2>{stage.name}</h2><span className="deals-stage-count">{stage.deals.length}</span></div><strong>{stage.total}</strong></header>
+    {!data.pipelineId ? <section className="deals-empty"><h2>No pipeline yet</h2><p>Create a pipeline in workspace settings before adding deals.</p></section> : !stages.length && view === "board" ? <section className="deals-empty"><h2>No active deal stages</h2><p>Activate an open stage in pipeline settings before adding or moving deals.</p></section> : !tableDeals.length ? <section className="deals-empty"><h2>{hasNarrowingFilter ? "No matching deals" : "Your pipeline is clear"}</h2><p>{hasNarrowingFilter ? "Try changing or clearing your filters." : "New deals will appear here when they are added to this pipeline."}</p>{canCreate && !hasNarrowingFilter && data.pipelineId !== "all" && <button className="deals-button deals-button-secondary" onClick={() => setFormDeal(null)} type="button"><Plus size={15} /> Add the first deal</button>}</section> : view === "board" ? <section aria-label={`${data.pipelineId === "all" ? "All pipelines" : data.pipelines.find(({ id }) => id === data.pipelineId)?.name ?? "Pipeline"} stages`} className="deals-board" onDragEnd={() => setDragDeal(null)}>
+      {totals.map((stage) => <div aria-label={`${stage.title}, ${stage.deals.length} deals`} className={`deals-stage stage-${stage.stage_type}`} key={stage.id} onDragOver={(event) => { if (dragDeal && stage.stage_type === "open") { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }} onDrop={(event) => { event.preventDefault(); const id = event.dataTransfer.getData("text/plain") || dragDeal; if (id && stage.stage_type === "open") move(id, stage.id); setDragDeal(null); }}>
+        <header className="deals-stage-header"><div><span className="deals-stage-indicator" /><h2>{stage.title}</h2><span className="deals-stage-count">{stage.deals.length}</span></div><strong>{stage.total}</strong></header>
 
-        <div className="deals-stage-cards">{stage.deals.length ? stage.deals.map((deal) => <DealCard canEdit={canEdit(deal) && stage.stage_type === "open"} canDuplicate={canCreate} data={data} deal={deal} key={deal.id} moving={pendingIds.has(deal.id)} todayIso={todayIso} onEdit={() => editDeal(deal)} onMove={(stageId) => move(deal.id, stageId)} onDrag={setDragDeal} onDuplicate={() => duplicate(deal)} stages={stages} />) : <p className="deals-stage-empty">No deals in this stage</p>}</div>
+        <div className="deals-stage-cards">{stage.deals.length ? stage.deals.map((deal) => <DealCard canEdit={canEdit(deal) && stage.stage_type === "open"} canDuplicate={canCreate} data={data} deal={deal} key={deal.id} moving={pendingIds.has(deal.id)} nextTask={nextTasks[deal.id]} attentionReasons={attentionReasons[deal.id] ?? []} onEdit={() => editDeal(deal)} onMove={(stageId) => move(deal.id, stageId)} onDrag={setDragDeal} onDuplicate={() => duplicate(deal)} stages={stages} />) : <p className="deals-stage-empty">No deals in this stage</p>}</div>
       </div>)}
-    </section> : <section aria-label="Deals list" className="deals-list-wrap"><table className="deals-list"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Primary contact</th><th scope="col">Stage</th><th scope="col">Value</th><th scope="col">Close date</th><th scope="col">Owner</th><th scope="col">Priority</th><th scope="col">Next stage</th>{canCreate && <th scope="col">Actions</th>}</tr></thead><tbody>{tableDeals.map((deal) => <tr key={deal.id}><th scope="row"><div className="deals-list-name-actions"><button className="deals-list-edit" disabled={!canEdit(deal) || deal.status !== "open"} onClick={() => editDeal(deal)} type="button">{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div></th><td>{deal.company?.name ?? "—"}</td><td>{deal.contact?.name ?? "—"}</td><td>{stages.find(({ id }) => id === deal.stage_id)?.name ?? "—"}</td><td>{money(Number(deal.amount), deal.currency)}</td><td><span>{shortDate(deal.expected_close_date, dateFormat)}</span><DealAttention deal={deal} todayIso={todayIso} /></td><td><OwnerDisplay ownerId={deal.owner_id} owners={data.owners} /></td><td><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span></td><td><label className="sr-only" htmlFor={`list-move-${deal.id}`}>Move {deal.title} to stage</label><select disabled={!canEdit(deal) || pendingIds.has(deal.id) || deal.status !== "open"} id={`list-move-${deal.id}`} onChange={(event) => { if (event.target.value) move(deal.id, event.target.value); event.target.value = ""; }} value=""><option value="">Choose…</option>{stages.filter(({ stage_type, id }) => stage_type === "open" && id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></td>{canCreate && <td><button className="deals-button deals-button-secondary" disabled={pendingIds.has(deal.id)} onClick={() => duplicate(deal)} type="button">Duplicate</button></td>}</tr>)}</tbody></table></section>}
+    </section> : <section aria-label="Deals list" className="deals-list-wrap"><table className="deals-list"><thead><tr><th scope="col">Deal</th><th scope="col">Company</th><th scope="col">Primary contact</th><th scope="col">Stage</th><th scope="col">Value</th><th scope="col">Close date</th><th scope="col">Owner</th><th scope="col">Tags</th><th scope="col">Priority</th><th scope="col">Next stage</th>{canCreate && <th scope="col">Actions</th>}</tr></thead><tbody>{tableDeals.map((deal) => <tr key={deal.id}><th scope="row"><div className="deals-list-name-actions"><button className="deals-list-edit" disabled={!canEdit(deal) || deal.status !== "open"} onClick={() => editDeal(deal)} type="button">{deal.title}</button><Link aria-label={`View details for ${deal.title}`} className="deals-view-details" href={`/app/deals/${deal.id}`}>View details</Link></div></th><td>{deal.company?.name ?? "—"}</td><td>{deal.contact?.name ?? "—"}</td><td>{stageLabel(deal, stages, data.pipelines, data.pipelineId === "all")}</td><td>{money(Number(deal.amount), deal.currency)}</td><td><span>{shortDate(deal.expected_close_date, dateFormat)}</span><DealAttention reasons={attentionReasons[deal.id] ?? []} /></td><td><OwnerDisplay displayLabel={deal.ownerLabel} ownerId={deal.owner_id} owners={data.owners} /></td><td><DealTags tags={deal.tags} /></td><td><span className={`deals-priority priority-${deal.priority}`}>{priorityLabel[deal.priority]}</span></td><td><label className="sr-only" htmlFor={`list-move-${deal.id}`}>Move {deal.title} to stage</label><select disabled={!canEdit(deal) || pendingIds.has(deal.id) || deal.status !== "open"} id={`list-move-${deal.id}`} onChange={(event) => { if (event.target.value) move(deal.id, event.target.value); event.target.value = ""; }} value=""><option value="">Choose…</option>{stages.filter(({ stage_type, id, pipeline_id }) => stage_type === "open" && pipeline_id === deal.pipeline_id && id !== deal.stage_id).map(({ id, name }) => <option key={id} value={id}>{name}</option>)}</select></td>{canCreate && <td><button className="deals-button deals-button-secondary" disabled={pendingIds.has(deal.id)} onClick={() => duplicate(deal)} type="button">Duplicate</button></td>}</tr>)}</tbody></table></section>}
 
     <section aria-label="Pipeline summary" className="deals-summary"><span><strong>{deals.length}</strong> {deals.length === 1 ? "deal" : "deals"}</span><span><strong>{moneyByCurrency(deals.filter(({ status }) => status === "open"))}</strong> open value</span><span><strong>{moneyByCurrency(deals.filter(({ status }) => status === "open"), true)}</strong> weighted pipeline</span></section>
-    {formDeal !== undefined && <DealForm canReassign={canReassign} currentUserId={currentUserId} data={data} deal={formDeal} onClose={() => setFormDeal(undefined)} />}
+    {formDeal !== undefined && <DealForm canReassign={canReassign} currentUserId={currentUserId} data={data} deal={formDeal} onClose={() => setFormDeal(undefined)} onTagSaveWarning={setNotice} />}
   </div>;
 }
 
-function exportHref(pipeline: string, q: string, owner: string) {
+type DealHrefFilters = { pipeline: string; q: string; owner: string; status: string; wonFrom?: string; wonTo?: string };
+
+function dealHref(path: string, filters: DealHrefFilters, view?: "board" | "list") {
   const params = new URLSearchParams();
-  if (pipeline) params.set("pipeline", pipeline);
-  if (q) params.set("q", q);
-  if (owner) params.set("owner", owner);
-  return `/app/deals/export?${params.toString()}`;
+  for (const [key, filterValue] of Object.entries(filters)) if (filterValue && !(key === "status" && filterValue === "all")) params.set(key, filterValue);
+  if (view) params.set("view", view);
+  return `${path}?${params.toString()}`;
 }
 
-function viewHref(view: "board" | "list", pipeline: string, q: string, owner: string) {
-  const params = new URLSearchParams();
-  if (pipeline) params.set("pipeline", pipeline);
-  if (q) params.set("q", q);
-  if (owner) params.set("owner", owner);
-  params.set("view", view);
-  return `/app/deals?${params.toString()}`;
+function pipelineName(pipelines: DealsData["pipelines"], pipelineId: string) {
+  return pipelines.find(({ id }) => id === pipelineId)?.name ?? "Pipeline";
+}
+
+function stageLabel(deal: DealRow, stages: DealStage[], pipelines: DealsData["pipelines"], showPipeline: boolean) {
+  const stage = stages.find(({ id }) => id === deal.stage_id);
+  const name = stage?.name ?? (deal.status === "won" ? "Won" : deal.status === "lost" ? "Lost" : "—");
+  return showPipeline ? `${pipelineName(pipelines, deal.pipeline_id)} · ${name}` : name;
 }
