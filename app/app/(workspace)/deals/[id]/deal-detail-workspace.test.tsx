@@ -134,7 +134,7 @@ describe("DealDetailWorkspace", () => {
   });
 
   it("renders related deal notes, follow-up tasks, and engagement actions", () => {
-    render(<DealDetailWorkspace canEdit detail={dealDetail} />);
+    render(<DealDetailWorkspace canEdit canEditAll detail={dealDetail} />);
 
     expect(screen.getByRole("region", { name: "Activity timeline" })).toHaveTextContent("Deal marked lost");
     const notes = screen.getByRole("region", { name: "Notes" });
@@ -155,7 +155,7 @@ describe("DealDetailWorkspace", () => {
       { ...dealDetail.notes[0], id: "6fd74499-e014-4797-a2a9-f66d4a2b7f57", body: "Pinned detail.", created_at: "2026-04-02T14:00:00.000Z", updated_at: "2026-04-02T14:00:00.000Z", is_pinned: true },
       ...dealDetail.notes,
     ];
-    const { rerender } = render(<DealDetailWorkspace canEdit detail={{ ...dealDetail, notes }} />);
+    const { rerender } = render(<DealDetailWorkspace canEdit canEditAll detail={{ ...dealDetail, notes }} />);
     const articles = within(screen.getByRole("region", { name: "Notes" })).getAllByRole("article");
     expect(articles[0]).toHaveTextContent("Pinned detail.");
     expect(within(articles[0]).getByRole("button", { name: "Unpin note" })).toBeInTheDocument();
@@ -353,5 +353,19 @@ describe("DealDetailWorkspace note editing and deletion", () => {
 
     rerender(<DealDetailWorkspace canEdit={false} canEditAll currentUserId={creatorId} detail={dealDetail} />);
     expect(screen.queryByRole("button", { name: "Edit note" })).not.toBeInTheDocument();
+  });
+
+  it("shows the pin control only for notes the user may modify", () => {
+    const { rerender } = render(<DealDetailWorkspace canEdit currentUserId="someone-else" detail={dealDetail} />);
+    expect(screen.queryByRole("button", { name: "Pin note" })).not.toBeInTheDocument();
+
+    rerender(<DealDetailWorkspace canEdit currentUserId={creatorId} detail={dealDetail} />);
+    expect(screen.getByRole("button", { name: "Pin note" })).toBeInTheDocument();
+
+    rerender(<DealDetailWorkspace canEdit canEditAll currentUserId="someone-else" detail={dealDetail} />);
+    expect(screen.getByRole("button", { name: "Pin note" })).toBeInTheDocument();
+
+    rerender(<DealDetailWorkspace canEdit={false} canEditAll currentUserId={creatorId} detail={dealDetail} />);
+    expect(screen.queryByRole("button", { name: "Pin note" })).not.toBeInTheDocument();
   });
 });

@@ -200,7 +200,7 @@ function EngagementActions({ detail, canEdit, createNoteIntent = false, createTa
 
 const dealNoteClasses: NoteActionClasses = { button: "deals-button deals-button-secondary", primaryButton: "deals-button deals-button-primary", field: "deals-field", error: "", success: "" };
 
-function DealNote({ note, dealId, canEdit, canModify, dateFormat }: { note: DealDetail["notes"][number]; dealId: string; canEdit: boolean; canModify: boolean; dateFormat: DateFormat }) {
+function DealNote({ note, dealId, canModify, dateFormat }: { note: DealDetail["notes"][number]; dealId: string; canModify: boolean; dateFormat: DateFormat }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(toggleDealNotePinAction, blankEngagementState);
   useEffect(() => { if (state.ok) router.refresh(); }, [state.ok, state.message, router]);
@@ -210,7 +210,7 @@ function DealNote({ note, dealId, canEdit, canModify, dateFormat }: { note: Deal
     <p>By {note.author}</p>
     <time dateTime={note.created_at}>Created {timestampLabel(note.created_at, dateFormat)}</time>
     {note.updated_at !== note.created_at && <time dateTime={note.updated_at}> · Updated {timestampLabel(note.updated_at, dateFormat)}</time>}
-    {canEdit && <form action={action}>
+    {canModify && <form action={action}>
       <input name="dealId" type="hidden" value={dealId} />
       <input name="noteId" type="hidden" value={note.id} />
       <button className="deals-button deals-button-secondary" disabled={pending} type="submit">{pending ? "Saving…" : note.is_pinned ? "Unpin note" : "Pin note"}</button>
@@ -365,7 +365,7 @@ export function DealDetailWorkspace({ detail, canEdit, canEditAll = false, curre
 
       <section aria-labelledby="deal-notes-heading" className="deal-detail-section deal-detail-activity">
         <h2 id="deal-notes-heading">Notes</h2>
-        {detail.notes.length ? <div className="deal-notes-list">{detail.notes.map((note) => <DealNote canEdit={canEdit} canModify={canEdit && (canEditAll || note.created_by === currentUserId)} dateFormat={dateFormat} dealId={deal.id} key={note.id} note={note} />)}</div> : <p className="deal-activity-empty">No notes have been added to this deal yet.</p>}
+        {detail.notes.length ? <div className="deal-notes-list">{detail.notes.map((note) => <DealNote canModify={canEdit && (canEditAll || note.created_by === currentUserId)} dateFormat={dateFormat} dealId={deal.id} key={note.id} note={note} />)}</div> : <p className="deal-activity-empty">No notes have been added to this deal yet.</p>}
       </section>
 
       <section aria-labelledby="deal-tasks-heading" className="deal-detail-section deal-detail-activity">

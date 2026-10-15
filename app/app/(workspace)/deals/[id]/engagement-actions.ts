@@ -72,9 +72,12 @@ export async function toggleDealNotePinAction(_previous: DealEngagementActionSta
   const editable = await editableDeal(parsedId.data);
   if (editable.error || !editable.supabase) return { message: editable.error ?? "Deal not found." };
   const noteId = parsedNoteId.data;
-  const { data: note, error: noteError } = await editable.supabase.from("notes").select("id, is_pinned")
+  const { data: note, error: noteError } = await editable.supabase.from("notes").select("id, is_pinned, created_by")
     .eq("workspace_id", editable.context.workspaceId).eq("related_entity_type", "deal").eq("related_entity_id", parsedId.data).eq("id", noteId).maybeSingle();
   if (noteError || !note) return { message: "Note not found in this workspace." };
+  if (!hasWorkspacePermission(editable.context.role, "crm.edit.all") && note.created_by !== editable.context.userId) {
+    return { message: "You can update only your own notes." };
+  }
   const { data, error } = await editable.supabase.from("notes").update({ is_pinned: !note.is_pinned })
     .eq("workspace_id", editable.context.workspaceId).eq("related_entity_type", "deal").eq("related_entity_id", parsedId.data).eq("id", noteId).select("id").maybeSingle();
   if (error || !data) return { message: "Note could not be updated." };

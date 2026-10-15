@@ -24,7 +24,7 @@ function dealForm(id = dealId) {
   return form;
 }
 
-function setupDeal(ownerId = userId, status: "open" | "won" | "lost" = "open") {
+function setupDeal(ownerId = userId, status: "open" | "won" | "lost" = "open", noteCreatedBy = userId) {
   const query = {
     select: mocks.dealSelect.mockReturnThis(), eq: mocks.dealEq.mockReturnThis(), is: mocks.dealIs.mockReturnThis(),
     maybeSingle: mocks.dealMaybeSingle.mockResolvedValue({ data: { id: dealId, owner_id: ownerId, status }, error: null }),
@@ -36,7 +36,7 @@ function setupDeal(ownerId = userId, status: "open" | "won" | "lost" = "open") {
       insert: mocks.noteInsert,
       select: mocks.noteSelect.mockReturnThis(),
       eq: mocks.noteEq.mockReturnThis(),
-      maybeSingle: mocks.noteMaybeSingle.mockResolvedValue({ data: { id: "e75c8819-b731-46e6-8443-91fa11a4ee58", is_pinned: false }, error: null }),
+      maybeSingle: mocks.noteMaybeSingle.mockResolvedValue({ data: { id: "e75c8819-b731-46e6-8443-91fa11a4ee58", is_pinned: false, created_by: noteCreatedBy }, error: null }),
       update: mocks.noteUpdate.mockReturnValue({ eq: mocks.noteUpdateEq.mockReturnThis(), select: mocks.noteUpdateSelect.mockReturnThis(), maybeSingle: mocks.noteUpdateMaybeSingle.mockResolvedValue({ data: { id: "e75c8819-b731-46e6-8443-91fa11a4ee58" }, error: null }) }),
     } : {}),
     ...(table === "tasks" ? { insert: mocks.taskInsert } : {}),
@@ -83,11 +83,30 @@ describe("deal engagement actions", () => {
     const form = dealForm(); form.set("noteId", "e75c8819-b731-46e6-8443-91fa11a4ee58");
 
     await expect(toggleDealNotePinAction({}, form)).resolves.toEqual({ ok: true, message: "Note pinned." });
-    expect(mocks.noteSelect).toHaveBeenCalledWith("id, is_pinned");
+    expect(mocks.noteSelect).toHaveBeenCalledWith("id, is_pinned, created_by");
     expect(mocks.noteUpdate).toHaveBeenCalledWith({ is_pinned: true });
     expect(mocks.noteUpdateEq).toHaveBeenCalledWith("workspace_id", workspaceId);
     expect(mocks.noteUpdateEq).toHaveBeenCalledWith("related_entity_id", dealId);
     expect(mocks.revalidatePath).toHaveBeenCalledWith(`/app/deals/${dealId}`);
+  });
+
+  it("rejects pinning a note created by someone else for a non-admin editor", async () => {
+    setupDeal(userId, "open", peerId);
+    const form = dealForm(); form.set("noteId", "e75c8819-b731-46e6-8443-91fa11a4ee58");
+
+    const result = await toggleDealNotePinAction({}, form);
+    expect(result).toEqual({ message: "You can update only your own notes." });
+    expect(mocks.noteUpdate).not.toHaveBeenCalled();
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("lets a user with edit-all pin a note created by someone else", async () => {
+    mocks.requirePermission.mockResolvedValue({ workspaceId, userId, role: "manager" });
+    setupDeal(peerId, "open", peerId);
+    const form = dealForm(); form.set("noteId", "e75c8819-b731-46e6-8443-91fa11a4ee58");
+
+    await expect(toggleDealNotePinAction({}, form)).resolves.toEqual({ ok: true, message: "Note pinned." });
+    expect(mocks.noteUpdate).toHaveBeenCalledWith({ is_pinned: true });
   });
 
   it("rejects malformed note IDs before querying or updating notes", async () => {
