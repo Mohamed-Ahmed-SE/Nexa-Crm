@@ -10,6 +10,7 @@ import { getContactForEdit } from "@/lib/contacts/repository";
 import { findContactDuplicates, normalizeContactEmail, normalizeContactPhone, type ContactDuplicate, type ContactDuplicateCandidate } from "@/lib/contacts/duplicates";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { contactActivityInputSchema, contactNoteInputSchema, contactTaskInputSchema } from "@/lib/contacts/engagement-schema";
+import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
 
 export type ContactActionState = { ok?: boolean; refreshRequired?: boolean; message?: string; fieldErrors?: Record<string, string[]>; duplicateMatches?: ContactDuplicate[] };
 const text = (form: FormData, key: string) => { const formEntry = form.get(key); return typeof formEntry === "string" ? formEntry : ""; };
@@ -218,6 +219,35 @@ export async function logContactActivityAction(_previous: ContactActionState, fo
   if (insertError) return { message: "Activity could not be saved." };
   revalidatePath(`/app/contacts/${id.data}`);
   return { ok: true, message: "Activity logged." };
+}
+
+async function modifiableContactActivity(form: FormData, verb: ActivityVerb) {
+  const contactId = contactIdSchema.safeParse(text(form, "contactId"));
+  const activityId = contactIdSchema.safeParse(text(form, "activityId"));
+  if (!contactId.success || !activityId.success) return { supabase: null, message: "This activity could not be identified." };
+  const { context, supabase, contact, error } = await editableContact(contactId.data);
+  if (error || !supabase || !contact) return { supabase: null, message: error ?? "Contact not found." };
+  const target: ActivityTarget = { workspaceId: context.workspaceId, entityType: "contact", entityId: contactId.data, activityId: activityId.data };
+  const message = await activityModificationError(supabase, { target, role: context.role, userId: context.userId, verb, entityLabel: "contact" });
+  return message ? { supabase: null, message } : { supabase, target };
+}
+
+export async function updateContactActivityAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
+  const access = await modifiableContactActivity(form, "update");
+  if (!access.supabase) return { message: access.message };
+  const parsed = contactActivityInputSchema.safeParse({ type: text(form, "type"), subject: text(form, "subject"), body: text(form, "body"), occurredAt: normalizeContactDateTime(text(form, "occurredAt"), text(form, "timezoneOffset")) });
+  if (!parsed.success) return { message: "Check the activity details.", fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!await updateManualActivity(access.supabase, access.target, parsed.data)) return { message: "Activity could not be updated. Refresh the contact and try again." };
+  revalidatePath(`/app/contacts/${access.target.entityId}`);
+  return { ok: true, message: "Activity updated." };
+}
+
+export async function deleteContactActivityAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
+  const access = await modifiableContactActivity(form, "delete");
+  if (!access.supabase) return { message: access.message };
+  if (!await deleteManualActivity(access.supabase, access.target)) return { message: "Activity could not be deleted. Refresh the contact and try again." };
+  revalidatePath(`/app/contacts/${access.target.entityId}`);
+  return { ok: true, message: "Activity deleted." };
 }
 
 export async function addContactNoteAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {

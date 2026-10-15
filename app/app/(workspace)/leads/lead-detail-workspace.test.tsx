@@ -1,15 +1,15 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AnchorHTMLAttributes } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { LeadDetail } from "@/lib/leads/repository";
 import { LeadDetailWorkspace } from "./lead-detail-workspace";
-import { deleteLeadNoteAction, updateLeadNoteAction } from "./engagement-actions";
+import { deleteLeadActivityAction, deleteLeadNoteAction, updateLeadActivityAction, updateLeadNoteAction } from "./engagement-actions";
 
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href as string} {...props}>{children}</a> }));
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
-vi.mock("./engagement-actions", () => ({ addLeadNoteAction: vi.fn(), logLeadActivityAction: vi.fn(), updateLeadNoteAction: vi.fn(), deleteLeadNoteAction: vi.fn() }));
+vi.mock("./engagement-actions", () => ({ addLeadNoteAction: vi.fn(), logLeadActivityAction: vi.fn(), updateLeadNoteAction: vi.fn(), deleteLeadNoteAction: vi.fn(), updateLeadActivityAction: vi.fn(), deleteLeadActivityAction: vi.fn() }));
 vi.mock("../tasks/actions", () => ({ createTaskAction: vi.fn() }));
 
 const detail: LeadDetail = {
@@ -59,7 +59,7 @@ describe("LeadDetailWorkspace", () => {
   it("shows saved activities, follow-up tasks, and notes in the lead timeline", () => {
     render(<LeadDetailWorkspace detail={{
       ...detail,
-      activities: [{ id: "activity-1", activity_type: "call", subject: "Discovery call", body: "Discussed timing.", occurred_at: "2026-04-03T12:00:00Z", is_system_event: false }],
+      activities: [{ id: "activity-1", activity_type: "call", subject: "Discovery call", body: "Discussed timing.", occurred_at: "2026-04-03T12:00:00Z", created_by: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", is_system_event: false }],
       tasks: [{ id: "task-1", title: "Send proposal", description: null, task_type: "follow_up", status: "open", priority: "high", due_at: "2026-04-04T12:00:00Z", assigned_to: null }],
       notes: [{ id: "note-1", body: "Budget confirmed.", created_by: "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2", created_at: "2026-04-03T13:00:00Z", is_pinned: false }],
     }} />);
@@ -191,5 +191,70 @@ describe("LeadDetailWorkspace note editing and deletion", () => {
 
     rerender(<LeadDetailWorkspace canEdit={false} canEditAll currentUserId={creatorId} detail={noteDetail} />);
     expect(screen.queryByRole("button", { name: "Edit note" })).not.toBeInTheDocument();
+  });
+});
+
+describe("LeadDetailWorkspace activity editing and deletion", () => {
+  const creatorId = "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2";
+  const activity = { id: "activity-1", activity_type: "call", subject: "Discovery call", body: "Discussed timing.", occurred_at: "2026-04-03T12:00:00Z", created_by: creatorId, is_system_event: false };
+  const activityDetail = { ...detail, activities: [activity] };
+  const timeline = () => within(screen.getByRole("region", { name: "Lead activity timeline" }));
+
+  it("edits a manual activity inline and submits it with the lead and activity ids", async () => {
+    const user = userEvent.setup();
+    vi.mocked(updateLeadActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity updated." });
+    routerMocks.refresh.mockClear();
+    render(<LeadDetailWorkspace canEdit currentUserId={creatorId} detail={activityDetail} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit activity" }));
+    await user.clear(timeline().getByRole("textbox", { name: "Subject" }));
+    await user.type(timeline().getByRole("textbox", { name: "Subject" }), "Pricing call");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Activity updated.");
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledTimes(1));
+    const submitted = vi.mocked(updateLeadActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("leadId")).toBe(detail.lead.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+    expect(submitted?.get("subject")).toBe("Pricing call");
+  });
+
+  it("requires confirmation before deleting an activity and submits the delete action", async () => {
+    const user = userEvent.setup();
+    vi.mocked(deleteLeadActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity deleted." });
+    render(<LeadDetailWorkspace canEdit currentUserId={creatorId} detail={activityDetail} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete activity" }));
+    expect(deleteLeadActivityAction).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Activity deleted.");
+    const submitted = vi.mocked(deleteLeadActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("leadId")).toBe(detail.lead.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+  });
+
+  it("shows edit and delete only for manual activities the user may modify", () => {
+    const { rerender } = render(<LeadDetailWorkspace canEdit currentUserId="someone-else" detail={activityDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<LeadDetailWorkspace canEdit canEditAll currentUserId="someone-else" detail={activityDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<LeadDetailWorkspace canEdit canManageAllActivities currentUserId="someone-else" detail={activityDetail} />);
+    expect(screen.getByRole("button", { name: "Edit activity" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete activity" })).toBeInTheDocument();
+
+    rerender(<LeadDetailWorkspace canEdit={false} canManageAllActivities currentUserId={creatorId} detail={activityDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+  });
+
+  it("never offers controls on system events or system-generated activity types", () => {
+    render(<LeadDetailWorkspace canEdit canManageAllActivities currentUserId={creatorId} detail={{ ...detail, activities: [
+      { ...activity, id: "activity-2", is_system_event: true },
+      { ...activity, id: "activity-3", activity_type: "status_changed", subject: "Lead status changed" },
+    ] }} />);
+    expect(screen.getByText("Lead status changed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete activity" })).not.toBeInTheDocument();
   });
 });

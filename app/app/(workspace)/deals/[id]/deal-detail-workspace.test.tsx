@@ -4,12 +4,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { archiveDealAction, markDealWonAction, reopenDealAction } from "../actions";
 import type { DealDetail } from "@/lib/deals/repository";
 import { DealDetailWorkspace } from "./deal-detail-workspace";
-import { deleteDealNoteAction, updateDealNoteAction } from "./engagement-actions";
+import { deleteDealActivityAction, deleteDealNoteAction, updateDealActivityAction, updateDealNoteAction } from "./engagement-actions";
 
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
 vi.mock("../actions", () => ({ archiveDealAction: vi.fn(), markDealLostAction: vi.fn(), markDealWonAction: vi.fn(), reopenDealAction: vi.fn() }));
-vi.mock("./engagement-actions", () => ({ addDealNoteAction: vi.fn(), createDealFollowUpTaskAction: vi.fn(), logDealActivityAction: vi.fn(), toggleDealNotePinAction: vi.fn(), updateDealNoteAction: vi.fn(), deleteDealNoteAction: vi.fn() }));
+vi.mock("./engagement-actions", () => ({ addDealNoteAction: vi.fn(), createDealFollowUpTaskAction: vi.fn(), logDealActivityAction: vi.fn(), toggleDealNotePinAction: vi.fn(), updateDealNoteAction: vi.fn(), deleteDealNoteAction: vi.fn(), updateDealActivityAction: vi.fn(), deleteDealActivityAction: vi.fn() }));
 vi.mock("./file-actions", () => ({ uploadDealFileAction: vi.fn() }));
 
 const showModalDescriptor = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, "showModal");
@@ -55,7 +55,7 @@ const dealDetail: DealDetail = {
   tags: [{ id: "tag-priority", name: "Strategic", color_token: null }],
   lostReasons: [{ id: "d4d9669e-df9f-4f7d-a392-cb187ffb8d13", name: "Budget" }],
   openStages: [{ id: "8dc80d75-85b6-4c7e-a30f-210250b8384c", name: "Negotiation", position: 4 }],
-  activities: [{ id: "7f0197d1-c623-4602-b6db-a36e9ddad8b8", activity_type: "deal_lost", subject: "Deal marked lost", body: "Lost reason: Budget", occurred_at: "2026-04-03T15:45:00.000Z" }],
+  activities: [{ id: "7f0197d1-c623-4602-b6db-a36e9ddad8b8", activity_type: "deal_lost", subject: "Deal marked lost", body: "Lost reason: Budget", occurred_at: "2026-04-03T15:45:00.000Z", created_by: "c2155412-d8a0-4792-b2bc-f6064b2798f4", is_system_event: false }],
   tasks: [{ id: "21f0bd93-83e0-4bca-aee7-00e9642305ac", title: "Send proposal", description: "Include pricing", task_type: "follow_up", status: "open", priority: "high", due_at: "2026-04-04T15:00:00.000Z", assigned_to: null }],
   notes: [{ id: "e75c8819-b731-46e6-8443-91fa11a4ee58", body: "Pricing approved.", created_by: "c2155412-d8a0-4792-b2bc-f6064b2798f4", author: "Jordan Lee", created_at: "2026-04-03T14:00:00.000Z", updated_at: "2026-04-03T15:00:00.000Z", is_pinned: false }],
   attachments: [{ id: "3f73ca78-1538-4e41-92bb-684affd25a01", filename: "proposal.pdf", mime_type: "application/pdf", size_bytes: 24576, created_at: "2026-04-03T15:30:00.000Z" }],
@@ -367,5 +367,69 @@ describe("DealDetailWorkspace note editing and deletion", () => {
 
     rerender(<DealDetailWorkspace canEdit={false} canEditAll currentUserId={creatorId} detail={dealDetail} />);
     expect(screen.queryByRole("button", { name: "Pin note" })).not.toBeInTheDocument();
+  });
+});
+
+describe("DealDetailWorkspace activity editing and deletion", () => {
+  const creatorId = "c2155412-d8a0-4792-b2bc-f6064b2798f4";
+  const activity = { id: "9a3cde71-0a4b-4c1c-8a3c-5f9ff1f3a001", activity_type: "meeting", subject: "Pricing review", body: "Walked through tiers.", occurred_at: "2026-04-03T12:00:00.000Z", created_by: creatorId, is_system_event: false };
+  const activityDetail = { ...dealDetail, activities: [activity] };
+  const timeline = () => within(screen.getByRole("region", { name: "Activity timeline" }));
+
+  it("edits a manual activity inline and submits it with the deal and activity ids", async () => {
+    const user = userEvent.setup();
+    vi.mocked(updateDealActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity updated." });
+    render(<DealDetailWorkspace canEdit currentUserId={creatorId} detail={activityDetail} />);
+
+    await user.click(timeline().getByRole("button", { name: "Edit activity" }));
+    await user.clear(timeline().getByRole("textbox", { name: "Subject" }));
+    await user.type(timeline().getByRole("textbox", { name: "Subject" }), "Pricing follow-up");
+    await user.click(timeline().getByRole("button", { name: "Save changes" }));
+
+    expect(await timeline().findByRole("status")).toHaveTextContent("Activity updated.");
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledTimes(1));
+    const submitted = vi.mocked(updateDealActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("dealId")).toBe(dealDetail.deal.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+    expect(submitted?.get("subject")).toBe("Pricing follow-up");
+  });
+
+  it("requires confirmation before deleting an activity and submits the delete action", async () => {
+    const user = userEvent.setup();
+    vi.mocked(deleteDealActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity deleted." });
+    render(<DealDetailWorkspace canEdit currentUserId={creatorId} detail={activityDetail} />);
+
+    await user.click(timeline().getByRole("button", { name: "Delete activity" }));
+    expect(deleteDealActivityAction).not.toHaveBeenCalled();
+    await user.click(timeline().getByRole("button", { name: "Confirm delete" }));
+    expect(await timeline().findByRole("status")).toHaveTextContent("Activity deleted.");
+    const submitted = vi.mocked(deleteDealActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("dealId")).toBe(dealDetail.deal.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+  });
+
+  it("shows edit and delete only for manual activities the user may modify", () => {
+    const { rerender } = render(<DealDetailWorkspace canEdit currentUserId="someone-else" detail={activityDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<DealDetailWorkspace canEdit canEditAll currentUserId="someone-else" detail={activityDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<DealDetailWorkspace canEdit canManageAllActivities currentUserId="someone-else" detail={activityDetail} />);
+    expect(screen.getByRole("button", { name: "Edit activity" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete activity" })).toBeInTheDocument();
+
+    rerender(<DealDetailWorkspace canEdit={false} canManageAllActivities currentUserId={creatorId} detail={activityDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+  });
+
+  it("never offers controls on system events or system-generated activity types, including the unflagged deal_lost fixture", () => {
+    render(<DealDetailWorkspace canEdit canManageAllActivities currentUserId={creatorId} detail={{ ...dealDetail, activities: [
+      ...dealDetail.activities,
+      { ...activity, id: "9a3cde71-0a4b-4c1c-8a3c-5f9ff1f3a002", is_system_event: true },
+    ] }} />);
+    expect(screen.getByText("Deal marked lost")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete activity" })).not.toBeInTheDocument();
   });
 });

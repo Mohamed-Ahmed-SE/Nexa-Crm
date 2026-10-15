@@ -4,14 +4,16 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState, useEffect, useRef, useState, useTransition, type FormEvent, type ReactNode, type RefObject } from "react";
 import { archiveDealAction, markDealLostAction, markDealWonAction, reopenDealAction, type DealActionResult } from "../actions";
-import { addDealNoteAction, createDealFollowUpTaskAction, deleteDealNoteAction, logDealActivityAction, toggleDealNotePinAction, updateDealNoteAction, type DealEngagementActionState } from "./engagement-actions";
+import { addDealNoteAction, createDealFollowUpTaskAction, deleteDealActivityAction, deleteDealNoteAction, logDealActivityAction, toggleDealNotePinAction, updateDealActivityAction, updateDealNoteAction, type DealEngagementActionState } from "./engagement-actions";
 import { uploadDealFileAction, type DealFileActionState } from "./file-actions";
 import type { DealDetail } from "@/lib/deals/repository";
 import { useDateFormat } from "@/components/auth/date-format-provider";
 import { NoteEditDeleteControls, type NoteActionClasses } from "@/components/crm/note-actions";
+import { ActivityEditDeleteControls } from "@/components/crm/activity-actions";
+import { canModifyManualActivity } from "@/lib/activities/manual";
 import { formatCalendarDate, formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
 
-type Props = { detail: DealDetail; canEdit: boolean; canEditAll?: boolean; currentUserId?: string; canArchive?: boolean; createNoteIntent?: boolean; createTaskIntent?: boolean };
+type Props = { detail: DealDetail; canEdit: boolean; canEditAll?: boolean; canManageAllActivities?: boolean; currentUserId?: string; canArchive?: boolean; createNoteIntent?: boolean; createTaskIntent?: boolean };
 
 function currencyAmount(amount: number, currency: string) {
   try {
@@ -290,7 +292,7 @@ function DealArchiveControl({ dealId, title, canArchive }: { dealId: string; tit
   </>;
 }
 
-export function DealDetailWorkspace({ detail, canEdit, canEditAll = false, currentUserId = "", canArchive = false, createNoteIntent, createTaskIntent }: Props) {
+export function DealDetailWorkspace({ detail, canEdit, canEditAll = false, canManageAllActivities = false, currentUserId = "", canArchive = false, createNoteIntent, createTaskIntent }: Props) {
   const dateFormat = useDateFormat();
   const { deal, company, contact, stage, pipeline, ownerLabel, source } = detail;
   return (
@@ -360,6 +362,7 @@ export function DealDetailWorkspace({ detail, canEdit, canEditAll = false, curre
         {detail.activities.length ? <ol className="deal-activity-list">{detail.activities.map((activity) => <li key={activity.id}>
           <div><strong>{activity.subject || activity.activity_type.replaceAll("_", " ")}</strong><time dateTime={activity.occurred_at}>{timestampLabel(activity.occurred_at, dateFormat)}</time></div>
           {activity.body && <p>{activity.body}</p>}
+          {canEdit && canModifyManualActivity({ isAdmin: canManageAllActivities, userId: currentUserId, activity }) && <ActivityEditDeleteControls activity={activity} classes={dealNoteClasses} deleteAction={deleteDealActivityAction} entityId={deal.id} entityIdName="dealId" updateAction={updateDealActivityAction} />}
         </li>)}</ol> : <p className="deal-activity-empty">No activity recorded for this deal yet.</p>}
       </section>
 

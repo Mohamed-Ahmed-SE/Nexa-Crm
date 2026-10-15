@@ -28,7 +28,7 @@ export type LeadRow = {
   tags?: LeadTag[];
 };
 
-export type LeadActivity = { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; is_system_event: boolean };
+export type LeadActivity = { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; created_by: string; is_system_event: boolean };
 export type LeadTask = { id: string; title: string; description: string | null; task_type: string; status: string; priority: string; due_at: string | null; assigned_to: string | null };
 export type LeadNote = { id: string; body: string; created_by: string; created_at: string; is_pinned: boolean };
 export type LeadDetail = {
@@ -87,7 +87,7 @@ export async function getLeadDetail(supabase: Supabase, context: LeadDetailConte
     supabase.rpc("list_reassignable_workspace_members", {
       target_workspace_id: workspaceId, target_user_id: null, target_lead_id: id,
     }),
-    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, is_system_event")
+    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, created_by, is_system_event")
       .eq("workspace_id", workspaceId).eq("related_entity_type", "lead").eq("related_entity_id", id)
       .order("occurred_at", { ascending: false }).limit(50),
     supabase.from("tasks").select("id, title, description, task_type, status, priority, due_at, assigned_to")

@@ -80,7 +80,7 @@ select throws_ok(
   $$insert into public.activities (workspace_id, activity_type, created_by, related_entity_type, related_entity_id, is_system_event) values ('62000000-0000-4000-8000-000000000001', 'system', '61000000-0000-4000-8000-000000000002', 'contact', '63000000-0000-4000-8000-000000000001', true)$$,
   '42501', 'new row violates row-level security policy for table "activities"', 'member cannot create system activities'
 );
-select ok(not has_table_privilege('authenticated', 'public.activities', 'UPDATE') and not has_table_privilege('authenticated', 'public.activities', 'DELETE'), 'authenticated users cannot alter or delete append-only activities');
+select ok(not has_table_privilege('authenticated', 'public.activities', 'UPDATE') and not has_column_privilege('authenticated', 'public.activities', 'is_system_event', 'UPDATE'), 'authenticated users have no table-wide or system-flag update on activities (manual edit and delete are covered by 202604030040)');
 
 select set_config('request.jwt.claim.sub', '61000000-0000-4000-8000-000000000005', true);
 update public.tasks set title = 'Manager edited follow-up', assigned_to = '61000000-0000-4000-8000-000000000005'

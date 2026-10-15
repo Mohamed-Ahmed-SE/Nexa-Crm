@@ -16,7 +16,7 @@ export type ContactRow = {
 export type ContactTag = { id: string; name: string; color_token: string | null };
 export type ContactListRow = ContactRow & { lastActivity: string | null; nextActivity: string | null; tags: ContactTag[] };
 export type ContactDeal = { id: string; title: string; amount: number; currency: string; status: string; expected_close_date: string | null; stage: { name: string } | null };
-export type ContactActivity = { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; created_by: string; owner_id: string | null };
+export type ContactActivity = { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; created_by: string; owner_id: string | null; is_system_event: boolean };
 export type ContactTask = { id: string; title: string; description: string | null; task_type: string; status: string; priority: string; due_at: string | null; assigned_to: string | null; created_by: string; completed_at: string | null };
 export type ContactNote = { id: string; body: string; is_pinned: boolean; created_by: string; created_at: string; updated_at: string };
 export type ContactAttachment = { id: string; filename: string; mime_type: string; size_bytes: number; uploaded_by: string; created_at: string; storage_path: string };
@@ -135,7 +135,7 @@ export async function getContactDetail(supabase: Supabase, workspaceId: string, 
   const [contactResult, dealsResult, activitiesResult, tasksResult, notesResult, filesResult] = await Promise.all([
     getContact(supabase, workspaceId, id),
     supabase.from("deals").select("id, title, amount, currency, status, expected_close_date, stage:pipeline_stages(name)").eq("workspace_id", workspaceId).eq("primary_contact_id", id).is("archived_at", null).order("updated_at", { ascending: false }),
-    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, created_by, owner_id", { count: "exact" }).eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("occurred_at", { ascending: false }).range(activityStart, activityStart + contactPageSize - 1),
+    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, created_by, owner_id, is_system_event", { count: "exact" }).eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("occurred_at", { ascending: false }).range(activityStart, activityStart + contactPageSize - 1),
     supabase.from("tasks").select("id, title, description, task_type, status, priority, due_at, assigned_to, created_by, completed_at").eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("due_at", { ascending: true }),
     supabase.from("notes").select("id, body, is_pinned, created_by, created_at, updated_at").eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("attachments").select("id, filename, mime_type, size_bytes, uploaded_by, created_at, storage_path").eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("created_at", { ascending: false }),

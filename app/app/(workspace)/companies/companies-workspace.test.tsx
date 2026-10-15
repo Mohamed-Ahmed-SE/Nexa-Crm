@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CompaniesWorkspace, CompanyDetailWorkspace } from "./companies-workspace";
-import { deleteCompanyNoteAction, toggleCompanyNotePinnedAction, updateCompanyAction, updateCompanyNoteAction } from "./actions";
+import { deleteCompanyActivityAction, deleteCompanyNoteAction, toggleCompanyNotePinnedAction, updateCompanyAction, updateCompanyActivityAction, updateCompanyNoteAction } from "./actions";
 
 const mocks = vi.hoisted(() => {
   const refresh = vi.fn();
@@ -21,6 +21,8 @@ vi.mock("./actions", () => ({
   toggleCompanyNotePinnedAction: vi.fn(),
   updateCompanyNoteAction: vi.fn(),
   deleteCompanyNoteAction: vi.fn(),
+  updateCompanyActivityAction: vi.fn(),
+  deleteCompanyActivityAction: vi.fn(),
   updateCompanyAction: vi.fn(),
   uploadCompanyFileAction: vi.fn(),
 }));
@@ -272,5 +274,70 @@ describe("CompanyDetailWorkspace note editing and deletion", () => {
 
     rerender(<CompanyDetailWorkspace {...companyNoteProps} canEdit={false} canEditAll />);
     expect(screen.queryByRole("button", { name: "Edit note" })).not.toBeInTheDocument();
+  });
+});
+
+describe("CompanyDetailWorkspace activity editing and deletion", () => {
+  const activity = { id: "activity-1", activity_type: "meeting", subject: "Renewal meeting", body: "Agreed on terms.", occurred_at: "2026-04-03T12:00:00.000Z", created_by: "user-1", is_system_event: false };
+  const props = { ...companyNoteProps, section: "activity", detail: { ...companyDetail, activities: [activity] } };
+
+  it("edits a manual activity inline and submits it with the company and activity ids", async () => {
+    const user = userEvent.setup();
+    vi.mocked(updateCompanyActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity updated." });
+    mocks.refresh.mockClear();
+    render(<CompanyDetailWorkspace {...props} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit activity" }));
+    await user.clear(screen.getByRole("textbox", { name: "Subject" }));
+    await user.type(screen.getByRole("textbox", { name: "Subject" }), "Renewal signed");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Activity updated.");
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalledTimes(1));
+    const submitted = vi.mocked(updateCompanyActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("companyId")).toBe(companyDetail.company.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+    expect(submitted?.get("subject")).toBe("Renewal signed");
+  });
+
+  it("requires confirmation before deleting an activity and submits the delete action", async () => {
+    const user = userEvent.setup();
+    vi.mocked(deleteCompanyActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity deleted." });
+    render(<CompanyDetailWorkspace {...props} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete activity" }));
+    expect(deleteCompanyActivityAction).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Activity deleted.");
+    const submitted = vi.mocked(deleteCompanyActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("companyId")).toBe(companyDetail.company.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+  });
+
+  it("shows edit and delete only for manual activities the user may modify", () => {
+    const otherDetail = { ...companyDetail, activities: [{ ...activity, created_by: "user-2" }] };
+    const { rerender } = render(<CompanyDetailWorkspace {...props} detail={otherDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<CompanyDetailWorkspace {...props} canEditAll detail={otherDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<CompanyDetailWorkspace {...props} canManageAllActivities detail={otherDetail} />);
+    expect(screen.getByRole("button", { name: "Edit activity" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete activity" })).toBeInTheDocument();
+
+    rerender(<CompanyDetailWorkspace {...props} canEdit={false} canManageAllActivities detail={otherDetail} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+  });
+
+  it("never offers controls on system events or system-generated activity types", () => {
+    const systemDetail = { ...companyDetail, activities: [
+      { ...activity, id: "activity-2", is_system_event: true },
+      { ...activity, id: "activity-3", activity_type: "owner_changed", subject: "Company owner changed" },
+    ] };
+    render(<CompanyDetailWorkspace {...props} canManageAllActivities detail={systemDetail} />);
+    expect(screen.getByText("Company owner changed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete activity" })).not.toBeInTheDocument();
   });
 });

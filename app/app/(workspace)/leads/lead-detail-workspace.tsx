@@ -10,7 +10,9 @@ import type { LeadDetail } from "@/lib/leads/repository";
 import { statusLabels } from "@/lib/leads/schema";
 import { createTaskAction } from "../tasks/actions";
 import { NoteEditDeleteControls } from "@/components/crm/note-actions";
-import { addLeadNoteAction, deleteLeadNoteAction, logLeadActivityAction, updateLeadNoteAction, type LeadEngagementActionState } from "./engagement-actions";
+import { ActivityEditDeleteControls } from "@/components/crm/activity-actions";
+import { canModifyManualActivity } from "@/lib/activities/manual";
+import { addLeadNoteAction, deleteLeadActivityAction, deleteLeadNoteAction, logLeadActivityAction, updateLeadActivityAction, updateLeadNoteAction, type LeadEngagementActionState } from "./engagement-actions";
 
 const blankState: LeadEngagementActionState = {};
 
@@ -103,7 +105,7 @@ function EngagementActions({ leadId, owners, canReassign, createNoteIntent, crea
   </div>;
 }
 
-export function LeadDetailWorkspace({ detail, canEdit = false, canEditAll = false, currentUserId = "", canReassign = false, createNoteIntent = false, createTaskIntent = false }: { detail: LeadDetail; canEdit?: boolean; canEditAll?: boolean; currentUserId?: string; canReassign?: boolean; createNoteIntent?: boolean; createTaskIntent?: boolean }) {
+export function LeadDetailWorkspace({ detail, canEdit = false, canEditAll = false, canManageAllActivities = false, currentUserId = "", canReassign = false, createNoteIntent = false, createTaskIntent = false }: { detail: LeadDetail; canEdit?: boolean; canEditAll?: boolean; canManageAllActivities?: boolean; currentUserId?: string; canReassign?: boolean; createNoteIntent?: boolean; createTaskIntent?: boolean }) {
   const dateFormat = useDateFormat();
   const { lead, source, ownerLabel } = detail;
   const createdAt = formatTimestamp(lead.created_at, dateFormat);
@@ -136,6 +138,7 @@ export function LeadDetailWorkspace({ detail, canEdit = false, canEditAll = fals
               <div className="contact-activity-title"><strong>{activity.subject || activity.activity_type.replaceAll("_", " ")}</strong>{occurred && <time dateTime={activity.occurred_at}>{occurred}</time>}</div>
               <span className="contact-activity-type">{activity.activity_type.replaceAll("_", " ")}{activity.is_system_event ? " · Nexa CRM" : ""}</span>
               {activity.body && <p>{activity.body}</p>}
+              {canEdit && canModifyManualActivity({ isAdmin: canManageAllActivities, userId: currentUserId, activity }) && <ActivityEditDeleteControls activity={activity} deleteAction={deleteLeadActivityAction} entityId={lead.id} entityIdName="leadId" updateAction={updateLeadActivityAction} />}
             </div></li>;
           })}</ol> : <p className="contact-muted">No activity has been recorded for this lead yet.</p>}
         </section>

@@ -18,5 +18,5 @@ export default async function DealDetailPage({ params, searchParams }: { params:
   if (!detail) notFound();
   const canEdit = hasWorkspacePermission(context.role, "crm.edit.all") || (hasWorkspacePermission(context.role, "crm.edit.own") && detail.deal.owner_id === context.userId);
   const canArchive = hasWorkspacePermission(context.role, "crm.archive");
-  return <DealDetailWorkspace canArchive={canArchive} canEdit={canEdit} canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")} currentUserId={context.userId} createNoteIntent={query.createNote === "1"} createTaskIntent={query.createTask === "1"} detail={detail} />;
+  return <DealDetailWorkspace canArchive={canArchive} canEdit={canEdit} canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")} canManageAllActivities={context.role === "admin"} currentUserId={context.userId} createNoteIntent={query.createNote === "1"} createTaskIntent={query.createTask === "1"} detail={detail} />;
 }

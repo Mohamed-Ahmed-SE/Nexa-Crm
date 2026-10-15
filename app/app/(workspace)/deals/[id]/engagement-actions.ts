@@ -7,6 +7,7 @@ import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 import { dealActivityInputSchema, dealNoteInputSchema, dealTaskInputSchema } from "@/lib/deals/engagement-schema";
 import { dealIdSchema } from "@/lib/deals/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
 
 export type DealEngagementActionState = { ok?: boolean; message?: string; fieldErrors?: Record<string, string[]> };
 const text = (form: FormData, key: string) => {
@@ -46,6 +47,39 @@ export async function logDealActivityAction(_previous: DealEngagementActionState
   if (error) return { message: "Activity could not be saved." };
   revalidatePath(`/app/deals/${parsedId.data}`);
   return { ok: true, message: "Activity logged." };
+}
+
+async function modifiableDealActivity(form: FormData, verb: ActivityVerb) {
+  const parsedId = dealIdSchema.safeParse(text(form, "dealId"));
+  const parsedActivityId = dealIdSchema.safeParse(text(form, "activityId"));
+  if (!parsedId.success || !parsedActivityId.success) return { supabase: null, message: "This activity could not be identified." };
+  const editable = await editableDeal(parsedId.data);
+  if (editable.error || !editable.supabase) return { supabase: null, message: editable.error ?? "Deal not found." };
+  const { context, supabase } = editable;
+  const target: ActivityTarget = { workspaceId: context.workspaceId, entityType: "deal", entityId: parsedId.data, activityId: parsedActivityId.data };
+  const message = await activityModificationError(supabase, { target, role: context.role, userId: context.userId, verb, entityLabel: "deal" });
+  return message ? { supabase: null, message } : { supabase, target };
+}
+
+export async function updateDealActivityAction(_previous: DealEngagementActionState, form: FormData): Promise<DealEngagementActionState> {
+  const access = await modifiableDealActivity(form, "update");
+  if (!access.supabase) return { message: access.message };
+  const parsed = dealActivityInputSchema.safeParse({
+    type: text(form, "type"), subject: text(form, "subject"), body: text(form, "body"),
+    occurredAt: normalizeContactDateTime(text(form, "occurredAt"), text(form, "timezoneOffset")),
+  });
+  if (!parsed.success) return { message: "Check the activity details.", fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!await updateManualActivity(access.supabase, access.target, parsed.data)) return { message: "Activity could not be updated. Refresh the deal and try again." };
+  revalidatePath(`/app/deals/${access.target.entityId}`);
+  return { ok: true, message: "Activity updated." };
+}
+
+export async function deleteDealActivityAction(_previous: DealEngagementActionState, form: FormData): Promise<DealEngagementActionState> {
+  const access = await modifiableDealActivity(form, "delete");
+  if (!access.supabase) return { message: access.message };
+  if (!await deleteManualActivity(access.supabase, access.target)) return { message: "Activity could not be deleted. Refresh the deal and try again." };
+  revalidatePath(`/app/deals/${access.target.entityId}`);
+  return { ok: true, message: "Activity deleted." };
 }
 
 export async function addDealNoteAction(_previous: DealEngagementActionState, form: FormData): Promise<DealEngagementActionState> {

@@ -19,6 +19,7 @@ export default async function LeadDetailPage({ params, searchParams }: { params:
   return <LeadDetailWorkspace
     canEdit={hasWorkspacePermission(context.role, "crm.edit.all") || (hasWorkspacePermission(context.role, "crm.edit.own") && detail.lead.owner_id === context.userId)}
     canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")}
+    canManageAllActivities={context.role === "admin"}
     currentUserId={context.userId}
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
     detail={detail}

@@ -179,7 +179,7 @@ export type DealDetail = {
   tags: DealTag[];
   lostReasons: Array<{ id: string; name: string }>;
   openStages: Array<{ id: string; name: string; position: number }>;
-  activities: Array<{ id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string }>;
+  activities: Array<{ id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; created_by: string; is_system_event: boolean }>;
   tasks: Array<{ id: string; title: string; description: string | null; task_type: string; status: string; priority: string; due_at: string | null; assigned_to: string | null }>;
   notes: Array<{ id: string; body: string; created_by: string; author: string; created_at: string; updated_at: string; is_pinned: boolean }>;
   attachments: Array<{ id: string; filename: string; mime_type: string; size_bytes: number; created_at: string }>;
@@ -230,7 +230,7 @@ export async function getDealDetail(supabase: Supabase, workspaceId: string, id:
     getWorkspaceOwnerIds(supabase, workspaceId),
     supabase.from("lost_reasons").select("id, name").eq("workspace_id", workspaceId).eq("is_active", true).order("name"),
     supabase.from("pipeline_stages").select("id, name, position").eq("workspace_id", workspaceId).eq("pipeline_id", deal.pipeline_id).eq("is_active", true).eq("stage_type", "open").order("position"),
-    supabase.from("activities").select("id, activity_type, subject, body, occurred_at").eq("workspace_id", workspaceId).eq("related_entity_type", "deal").eq("related_entity_id", id).order("occurred_at", { ascending: false }).limit(100),
+    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, created_by, is_system_event").eq("workspace_id", workspaceId).eq("related_entity_type", "deal").eq("related_entity_id", id).order("occurred_at", { ascending: false }).limit(100),
     supabase.from("tasks").select("id, title, description, task_type, status, priority, due_at, assigned_to").eq("workspace_id", workspaceId).eq("related_entity_type", "deal").eq("related_entity_id", id).order("due_at", { ascending: true, nullsFirst: false }).limit(50),
     supabase.from("notes").select("id, body, created_by, created_at, updated_at, is_pinned").eq("workspace_id", workspaceId).eq("related_entity_type", "deal").eq("related_entity_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(50),
     supabase.from("attachments").select("id, filename, mime_type, size_bytes, created_at").eq("workspace_id", workspaceId).eq("related_entity_type", "deal").eq("related_entity_id", id).order("created_at", { ascending: false }).limit(50),

@@ -14,7 +14,7 @@ export type CompanyListRow = CompanyRecord & { ownerLabel: string; contactsCount
 export type CompanyDetail = {
   company: CompanyRecord; ownerLabel: string; contacts: { id: string; first_name: string; last_name: string; email: string | null; job_title: string | null; owner_id: string | null }[];
   deals: { id: string; title: string; amount: number; currency: string; status: string; expected_close_date: string | null; stage: { name: string } | null }[];
-  activities: { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; created_by: string }[];
+  activities: { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; created_by: string; is_system_event: boolean }[];
   tasks: { id: string; title: string; description: string | null; task_type: string; status: string; priority: string; due_at: string | null; assigned_to: string | null; created_by: string }[];
   notes: { id: string; body: string; is_pinned: boolean; created_by: string; created_at: string }[];
   attachments: { id: string; filename: string; mime_type: string; size_bytes: number; uploaded_by: string; created_at: string }[];
@@ -132,7 +132,7 @@ export async function getCompanyDetail(supabase: Supabase, workspaceId: string, 
     getCompany(supabase, workspaceId, id),
     supabase.from("contacts").select("id, first_name, last_name, email, job_title, owner_id").eq("workspace_id", workspaceId).eq("company_id", id).is("archived_at", null).order("last_name").order("first_name"),
     supabase.from("deals").select("id, title, amount, currency, status, expected_close_date, stage:pipeline_stages(name)").eq("workspace_id", workspaceId).eq("company_id", id).is("archived_at", null).order("updated_at", { ascending: false }),
-    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, created_by").eq("workspace_id", workspaceId).eq("related_entity_type", "company").eq("related_entity_id", id).order("occurred_at", { ascending: false }),
+    supabase.from("activities").select("id, activity_type, subject, body, occurred_at, created_by, is_system_event").eq("workspace_id", workspaceId).eq("related_entity_type", "company").eq("related_entity_id", id).order("occurred_at", { ascending: false }),
     supabase.from("tasks").select("id, title, description, task_type, status, priority, due_at, assigned_to, created_by").eq("workspace_id", workspaceId).eq("related_entity_type", "company").eq("related_entity_id", id).order("due_at", { ascending: true }),
     supabase.from("notes").select("id, body, is_pinned, created_by, created_at").eq("workspace_id", workspaceId).eq("related_entity_type", "company").eq("related_entity_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("attachments").select("id, filename, mime_type, size_bytes, uploaded_by, created_at").eq("workspace_id", workspaceId).eq("related_entity_type", "company").eq("related_entity_id", id).order("created_at", { ascending: false }),

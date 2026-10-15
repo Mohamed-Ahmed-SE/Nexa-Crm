@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ContactListRow, ContactSavedView } from "@/lib/contacts/repository";
 import type { ContactViewColumn } from "@/lib/contacts/schema";
 import { ContactDetailWorkspace, ContactsWorkspace } from "./contacts-workspace";
-import { archiveContactAction, createContactAction, deleteContactNoteAction, toggleContactNotePinnedAction, updateContactAction, updateContactNoteAction } from "./actions";
+import { archiveContactAction, createContactAction, deleteContactActivityAction, deleteContactNoteAction, toggleContactNotePinnedAction, updateContactAction, updateContactActivityAction, updateContactNoteAction } from "./actions";
 
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
@@ -20,6 +20,8 @@ vi.mock("./actions", () => ({
   toggleContactNotePinnedAction: vi.fn(),
   updateContactNoteAction: vi.fn(),
   deleteContactNoteAction: vi.fn(),
+  updateContactActivityAction: vi.fn(),
+  deleteContactActivityAction: vi.fn(),
   saveContactViewAction: vi.fn(),
   deleteContactViewAction: vi.fn(),
 }));
@@ -348,5 +350,68 @@ describe("ContactDetailWorkspace note editing and deletion", () => {
 
     rerender(<ContactDetailWorkspace {...detailProps} canEdit={false} canEditAll />);
     expect(screen.queryByRole("button", { name: "Edit note" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ContactDetailWorkspace activity editing and deletion", () => {
+  const activity = { id: "activity-1", activity_type: "call", subject: "Discovery call", body: "Discussed timing.", occurred_at: "2026-04-03T12:00:00.000Z", created_by: "user-1", owner_id: "user-1", is_system_event: false };
+
+  it("edits a manual activity inline and submits it with the contact and activity ids", async () => {
+    const user = userEvent.setup();
+    vi.mocked(updateContactActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity updated." });
+    routerMocks.refresh.mockClear();
+    render(<ContactDetailWorkspace {...detailProps} activities={[activity]} />);
+
+    await user.click(screen.getByRole("button", { name: "Edit activity" }));
+    await user.clear(screen.getByRole("textbox", { name: "Subject" }));
+    await user.type(screen.getByRole("textbox", { name: "Subject" }), "Renewal call");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Activity updated.");
+    await waitFor(() => expect(routerMocks.refresh).toHaveBeenCalledTimes(1));
+    const submitted = vi.mocked(updateContactActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("contactId")).toBe(populatedContact.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+    expect(submitted?.get("subject")).toBe("Renewal call");
+  });
+
+  it("requires confirmation before deleting an activity and submits the delete action", async () => {
+    const user = userEvent.setup();
+    vi.mocked(deleteContactActivityAction).mockResolvedValueOnce({ ok: true, message: "Activity deleted." });
+    render(<ContactDetailWorkspace {...detailProps} activities={[activity]} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete activity" }));
+    expect(deleteContactActivityAction).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Activity deleted.");
+    const submitted = vi.mocked(deleteContactActivityAction).mock.calls.at(-1)?.[1];
+    expect(submitted?.get("contactId")).toBe(populatedContact.id);
+    expect(submitted?.get("activityId")).toBe(activity.id);
+  });
+
+  it("shows edit and delete only for manual activities the user may modify", () => {
+    const otherActivity = { ...activity, created_by: "user-2" };
+    const { rerender } = render(<ContactDetailWorkspace {...detailProps} activities={[otherActivity]} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<ContactDetailWorkspace {...detailProps} canEditAll activities={[otherActivity]} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+
+    rerender(<ContactDetailWorkspace {...detailProps} canManageAllActivities activities={[otherActivity]} />);
+    expect(screen.getByRole("button", { name: "Edit activity" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete activity" })).toBeInTheDocument();
+
+    rerender(<ContactDetailWorkspace {...detailProps} canEdit={false} canManageAllActivities activities={[otherActivity]} />);
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+  });
+
+  it("never offers controls on system events or system-generated activity types", () => {
+    render(<ContactDetailWorkspace {...detailProps} canManageAllActivities activities={[
+      { ...activity, id: "activity-2", is_system_event: true },
+      { ...activity, id: "activity-3", activity_type: "owner_changed", subject: "Contact owner changed" },
+    ]} />);
+    expect(screen.getByText("Contact owner changed")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete activity" })).not.toBeInTheDocument();
   });
 });

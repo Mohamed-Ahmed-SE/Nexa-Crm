@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-import { listWorkspaceDeals, listDealTagsByEntityIds, replaceDealTags } from "./repository";
+import { getDealDetail, listWorkspaceDeals, listDealTagsByEntityIds, replaceDealTags } from "./repository";
 import { parseDealSearchParams } from "./schema";
 
 const workspaceId = "5a4302eb-742b-49cb-9f0d-bfc96e9474c3";
@@ -157,5 +157,38 @@ describe("deal list KPI drill-through filters", () => {
     expect(result.pipelineId).toBe(otherPipelineId);
     expect(filtersByTable.deals).toContainEqual(["eq", ["pipeline_id", otherPipelineId]]);
     expect(filtersByTable.deals.some(([method, args]) => (method === "eq" && args[0] === "status") || method === "gte" || method === "lt")).toBe(false);
+  });
+});
+
+function timelineClient(parent: Record<string, unknown>, activities: unknown[]) {
+  const activityCalls: Array<[string, unknown[]]> = [];
+  const fromQuery = (table: string) => {
+    const query: Record<string, unknown> = {};
+    for (const method of ["select", "eq", "is", "in", "order", "limit", "range"]) {
+      query[method] = (...args: unknown[]) => {
+        if (table === "activities") activityCalls.push([method, args]);
+        return query;
+      };
+    }
+    query.maybeSingle = () => Promise.resolve({ data: parent, error: null });
+    query.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+      Promise.resolve({ data: table === "activities" ? activities : [], error: null, count: table === "activities" ? activities.length : null }).then(resolve, reject);
+    return query;
+  };
+  return { supabase: { from: vi.fn(fromQuery), rpc: vi.fn(() => Promise.resolve({ data: [], error: null })) }, activityCalls };
+}
+
+describe("deal detail activity timeline", () => {
+  it("loads the creator and system flag needed to authorize activity edits, scoped to this deal", async () => {
+    const activities = [{ id: "activity-1", activity_type: "meeting", subject: "Review", body: null, occurred_at: "2026-04-03T12:00:00Z", created_by: tagId, is_system_event: false }];
+    const deal = { id: dealId, workspace_id: workspaceId, pipeline_id: "pipeline-1", stage_id: "stage-1", company_id: null, primary_contact_id: null, source_id: null, owner_id: null };
+    const { supabase, activityCalls } = timelineClient(deal, activities);
+
+    const detail = await getDealDetail(supabase as never, workspaceId, dealId);
+
+    const selected = String(activityCalls.find(([method]) => method === "select")?.[1][0]);
+    expect(selected.split(",").map((column) => column.trim())).toEqual(expect.arrayContaining(["id", "created_by", "is_system_event"]));
+    expect(activityCalls.filter(([method]) => method === "eq").map(([, args]) => args)).toEqual([["workspace_id", workspaceId], ["related_entity_type", "deal"], ["related_entity_id", dealId]]);
+    expect(detail?.activities).toEqual(activities);
   });
 });

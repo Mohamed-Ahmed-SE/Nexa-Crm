@@ -9,6 +9,7 @@ import { findCompanyDuplicates, type CompanyDuplicateCandidate } from "@/lib/com
 import { isValidCompanyUploadContent, validateCompanyUploadMetadata } from "@/lib/companies/upload";
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
 
 export type CompanyActionState = { ok?: boolean; message?: string; fieldErrors?: Record<string, string[]>; duplicateMatches?: CompanyDuplicateCandidate[] };
 const value = (form: FormData, key: string) => { const item = form.get(key); return typeof item === "string" ? item : ""; };
@@ -164,6 +165,36 @@ export async function logCompanyActivityAction(_previous: CompanyActionState, fo
   if (error) return { message: "Unable to record this activity." };
   revalidatePath(`/app/companies/${id.data}`);
   return { ok: true };
+}
+
+async function modifiableCompanyActivity(form: FormData, verb: ActivityVerb) {
+  const companyId = companyIdSchema.safeParse(value(form, "companyId"));
+  const activityId = companyIdSchema.safeParse(value(form, "activityId"));
+  if (!companyId.success || !activityId.success) return { supabase: null, message: "This activity could not be identified." };
+  const access = await companyAccess(companyId.data);
+  if (!access.supabase || !access.company) return { supabase: null, message: access.message ?? "Company not found." };
+  const { context, supabase } = access;
+  const target: ActivityTarget = { workspaceId: context.workspaceId, entityType: "company", entityId: companyId.data, activityId: activityId.data };
+  const message = await activityModificationError(supabase, { target, role: context.role, userId: context.userId, verb, entityLabel: "company" });
+  return message ? { supabase: null, message } : { supabase, target };
+}
+
+export async function updateCompanyActivityAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {
+  const access = await modifiableCompanyActivity(form, "update");
+  if (!access.supabase) return { message: access.message };
+  const parsed = companyActivityInputSchema.safeParse({ type: value(form, "type"), subject: value(form, "subject"), body: value(form, "body"), occurredAt: normalizeContactDateTime(value(form, "occurredAt"), value(form, "timezoneOffset")) });
+  if (!parsed.success) return { message: "Check the activity details.", fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!await updateManualActivity(access.supabase, access.target, parsed.data)) return { message: "Activity could not be updated. Refresh the company and try again." };
+  revalidatePath(`/app/companies/${access.target.entityId}`);
+  return { ok: true, message: "Activity updated." };
+}
+
+export async function deleteCompanyActivityAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {
+  const access = await modifiableCompanyActivity(form, "delete");
+  if (!access.supabase) return { message: access.message };
+  if (!await deleteManualActivity(access.supabase, access.target)) return { message: "Activity could not be deleted. Refresh the company and try again." };
+  revalidatePath(`/app/companies/${access.target.entityId}`);
+  return { ok: true, message: "Activity deleted." };
 }
 
 export async function addCompanyNoteAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {

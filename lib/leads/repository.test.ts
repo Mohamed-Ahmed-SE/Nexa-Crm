@@ -173,3 +173,31 @@ describe("lead detail notes", () => {
     expect(detail?.notes).toEqual(notes);
   });
 });
+
+describe("lead detail activity timeline", () => {
+  it("loads the creator and system flag needed to authorize activity edits, scoped to this lead", async () => {
+    const activities = [{ id: "activity-1", activity_type: "call", subject: "Call", body: null, occurred_at: "2026-04-03T12:00:00Z", created_by: "user-1", is_system_event: false }];
+    const activityCalls: Array<[string, unknown[]]> = [];
+    const fromQuery = (table: string) => {
+      const query: Record<string, unknown> = {};
+      for (const method of ["select", "eq", "is", "order", "limit"]) {
+        query[method] = (...args: unknown[]) => {
+          if (table === "activities") activityCalls.push([method, args]);
+          return query;
+        };
+      }
+      query.maybeSingle = () => Promise.resolve({ data: table === "leads" ? { id: leadId, owner_id: null, source_id: null } : null, error: null });
+      query.then = (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+        Promise.resolve({ data: table === "activities" ? activities : [], error: null }).then(resolve, reject);
+      return query;
+    };
+    const supabase = { from: vi.fn(fromQuery), rpc: vi.fn(() => Promise.resolve({ data: [], error: null })) };
+
+    const detail = await getLeadDetail(supabase as never, { workspaceId, userId: "user-1", fullName: "Taylor", id: leadId });
+
+    const selected = String(activityCalls.find(([method]) => method === "select")?.[1][0]);
+    expect(selected.split(",").map((column) => column.trim())).toEqual(expect.arrayContaining(["id", "created_by", "is_system_event"]));
+    expect(activityCalls.filter(([method]) => method === "eq").map(([, args]) => args)).toEqual([["workspace_id", workspaceId], ["related_entity_type", "lead"], ["related_entity_id", leadId]]);
+    expect(detail?.activities).toEqual(activities);
+  });
+});

@@ -7,6 +7,7 @@ import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 import { leadActivityInputSchema, leadNoteInputSchema } from "@/lib/leads/engagement-schema";
 import { leadIdSchema } from "@/lib/leads/schema";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
 
 export type LeadEngagementActionState = { ok?: boolean; message?: string; fieldErrors?: Record<string, string[]> };
 const text = (form: FormData, key: string) => {
@@ -45,6 +46,38 @@ export async function logLeadActivityAction(_previous: LeadEngagementActionState
   if (insertError) return { message: "Activity could not be saved." };
   revalidatePath(`/app/leads/${parsedId.data}`);
   return { ok: true, message: "Activity logged." };
+}
+
+async function modifiableLeadActivity(form: FormData, verb: ActivityVerb) {
+  const parsedId = leadIdSchema.safeParse(text(form, "leadId"));
+  const parsedActivityId = leadIdSchema.safeParse(text(form, "activityId"));
+  if (!parsedId.success || !parsedActivityId.success) return { supabase: null, message: "This activity could not be identified." };
+  const { context, supabase, error } = await editableLead(parsedId.data);
+  if (error || !supabase) return { supabase: null, message: error ?? "Lead not found." };
+  const target: ActivityTarget = { workspaceId: context.workspaceId, entityType: "lead", entityId: parsedId.data, activityId: parsedActivityId.data };
+  const message = await activityModificationError(supabase, { target, role: context.role, userId: context.userId, verb, entityLabel: "lead" });
+  return message ? { supabase: null, message } : { supabase, target };
+}
+
+export async function updateLeadActivityAction(_previous: LeadEngagementActionState, form: FormData): Promise<LeadEngagementActionState> {
+  const access = await modifiableLeadActivity(form, "update");
+  if (!access.supabase) return { message: access.message };
+  const parsed = leadActivityInputSchema.safeParse({
+    type: text(form, "type"), subject: text(form, "subject"), body: text(form, "body"),
+    occurredAt: normalizeContactDateTime(text(form, "occurredAt"), text(form, "timezoneOffset")),
+  });
+  if (!parsed.success) return { message: "Check the activity details.", fieldErrors: parsed.error.flatten().fieldErrors };
+  if (!await updateManualActivity(access.supabase, access.target, parsed.data)) return { message: "Activity could not be updated. Refresh the lead and try again." };
+  revalidatePath(`/app/leads/${access.target.entityId}`);
+  return { ok: true, message: "Activity updated." };
+}
+
+export async function deleteLeadActivityAction(_previous: LeadEngagementActionState, form: FormData): Promise<LeadEngagementActionState> {
+  const access = await modifiableLeadActivity(form, "delete");
+  if (!access.supabase) return { message: access.message };
+  if (!await deleteManualActivity(access.supabase, access.target)) return { message: "Activity could not be deleted. Refresh the lead and try again." };
+  revalidatePath(`/app/leads/${access.target.entityId}`);
+  return { ok: true, message: "Activity deleted." };
 }
 
 export async function addLeadNoteAction(_previous: LeadEngagementActionState, form: FormData): Promise<LeadEngagementActionState> {

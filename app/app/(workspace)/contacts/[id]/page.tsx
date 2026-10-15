@@ -34,6 +34,7 @@ export default async function ContactDetailPage({ params, searchParams }: {
     createNoteIntent={canEdit && query.createNote === "1"}
     createTaskIntent={canEdit && query.createTask === "1"}
     canEditAll={hasWorkspacePermission(context.role, "crm.edit.all")}
+    canManageAllActivities={context.role === "admin"}
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")}
     currentUserId={context.userId}
     companies={options.companies}
