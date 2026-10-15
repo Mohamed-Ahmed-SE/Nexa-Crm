@@ -10,7 +10,7 @@ function createQuery(table: string) {
   let offset = 0;
   const filters: Array<[string, unknown[]]> = [];
   const query: Record<string, unknown> = {};
-  for (const method of ["select", "eq", "is", "order", "or", "range", "gte", "lt", "in"]) {
+  for (const method of ["select", "eq", "is", "order", "or", "range", "gte", "lte", "lt", "in"]) {
     query[method] = (...args: unknown[]) => {
       mocks.calls.push([`${table}.${method}`, args]);
       if (method === "range") offset = Number(args[0]);
@@ -170,5 +170,100 @@ describe("Deals CSV export route", () => {
     expect(mocks.requirePermission).not.toHaveBeenCalled();
     expect(mocks.hasWorkspacePermission).not.toHaveBeenCalled();
     expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
+  });
+});
+
+describe("Export route query filters", () => {
+  const encoded = encodeURIComponent;
+  const dealPipelineId = "a1100000-0000-4000-8000-000000000001";
+  // The deals mock serves two pages, so each filter is applied once per page; compare distinct calls.
+  const callsFor = (call: string, column: string) => [...new Map(mocks.calls.filter(([name, args]) => name === call && args[0] === column).map((entry) => [JSON.stringify(entry), entry])).values()];
+  const exportEntity = async (entity: "leads" | "deals", query: string) => {
+    const response = await GET(new Request(`https://nexa.test/app/${entity}/export?${query}`), { params: Promise.resolve({ entity }) });
+    expect(response.status).toBe(200);
+  };
+
+  it.each([
+    ["createdFrom", `createdFrom=${encoded("2026-04-01T00:00:00Z")}`, "leads.gte", "2026-04-01T00:00:00Z"],
+    ["createdFrom with an offset", `createdFrom=${encoded("2026-04-01T00:00:00+02:00")}`, "leads.gte", "2026-04-01T00:00:00+02:00"],
+    ["createdTo", `createdTo=${encoded("2026-04-30T23:59:59Z")}`, "leads.lte", "2026-04-30T23:59:59Z"],
+  ])("applies the lead %s bound to created_at", async (_label, query, call, value) => {
+    await exportEntity("leads", query);
+
+    expect(callsFor(call, "created_at")).toEqual([[call, ["created_at", value]]]);
+  });
+
+  it("applies both lead created bounds as an inclusive range", async () => {
+    await exportEntity("leads", `createdFrom=${encoded("2026-04-01T00:00:00Z")}&createdTo=${encoded("2026-04-30T23:59:59Z")}`);
+
+    expect(mocks.calls).toContainEqual(["leads.gte", ["created_at", "2026-04-01T00:00:00Z"]]);
+    expect(mocks.calls).toContainEqual(["leads.lte", ["created_at", "2026-04-30T23:59:59Z"]]);
+  });
+
+  it.each([
+    ["no params", ""],
+    ["empty bounds", "createdFrom=&createdTo="],
+    ["non-datetime text", "createdFrom=yesterday&createdTo=tomorrow"],
+    ["date without time", "createdFrom=2026-04-01&createdTo=2026-04-30"],
+    ["datetime without offset", `createdFrom=${encoded("2026-04-01T00:00:00")}`],
+  ])("adds no lead created_at filter for %s", async (_label, query) => {
+    await exportEntity("leads", query);
+
+    expect(callsFor("leads.gte", "created_at")).toEqual([]);
+    expect(callsFor("leads.lte", "created_at")).toEqual([]);
+  });
+
+  it.each(["open", "won", "lost"])("filters deals by status %s", async (status) => {
+    await exportEntity("deals", `status=${status}`);
+
+    expect(callsFor("deals.eq", "status")).toEqual([["deals.eq", ["status", status]]]);
+  });
+
+  it.each([
+    ["status=all", "status=all"],
+    ["an unknown status", "status=archived"],
+    ["no status", ""],
+  ])("adds no deal status filter for %s", async (_label, query) => {
+    await exportEntity("deals", query);
+
+    expect(callsFor("deals.eq", "status")).toEqual([]);
+  });
+
+  it.each([
+    ["wonFrom", `wonFrom=${encoded("2026-04-01T00:00:00Z")}`, "deals.gte", "2026-04-01T00:00:00Z"],
+    ["wonTo", `wonTo=${encoded("2026-05-01T00:00:00Z")}`, "deals.lt", "2026-05-01T00:00:00Z"],
+  ])("applies the deal %s bound to won_at", async (_label, query, call, value) => {
+    await exportEntity("deals", query);
+
+    expect(callsFor(call, "won_at")).toEqual([[call, ["won_at", value]]]);
+    expect(callsFor("deals.lte", "won_at")).toEqual([]);
+  });
+
+  it.each([
+    ["no params", ""],
+    ["empty bounds", "wonFrom=&wonTo="],
+    ["non-datetime text", "wonFrom=last-week&wonTo=next-week"],
+    ["date without time", "wonFrom=2026-04-01&wonTo=2026-05-01"],
+  ])("adds no deal won_at filter for %s", async (_label, query) => {
+    await exportEntity("deals", query);
+
+    expect(callsFor("deals.gte", "won_at")).toEqual([]);
+    expect(callsFor("deals.lt", "won_at")).toEqual([]);
+  });
+
+  it("filters deals by a concrete pipeline id", async () => {
+    await exportEntity("deals", `pipeline=${dealPipelineId}`);
+
+    expect(callsFor("deals.eq", "pipeline_id")).toEqual([["deals.eq", ["pipeline_id", dealPipelineId]]]);
+  });
+
+  it.each([
+    ["pipeline=all", "pipeline=all"],
+    ["a non-uuid pipeline", "pipeline=not-a-pipeline"],
+    ["no pipeline", ""],
+  ])("adds no deal pipeline filter for %s", async (_label, query) => {
+    await exportEntity("deals", query);
+
+    expect(callsFor("deals.eq", "pipeline_id")).toEqual([]);
   });
 });

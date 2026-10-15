@@ -4,9 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import { CompaniesWorkspace, CompanyDetailWorkspace } from "./companies-workspace";
 import { deleteCompanyNoteAction, toggleCompanyNotePinnedAction, updateCompanyAction, updateCompanyNoteAction } from "./actions";
 
-const mocks = vi.hoisted(() => ({ createCompanyAction: vi.fn(), saveCompanyViewAction: vi.fn(), deleteCompanyViewAction: vi.fn(), refresh: vi.fn() }));
+const mocks = vi.hoisted(() => {
+  const refresh = vi.fn();
+  return { createCompanyAction: vi.fn(), saveCompanyViewAction: vi.fn(), deleteCompanyViewAction: vi.fn(), refresh, router: { refresh } };
+});
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => mocks.router }));
 vi.mock("@/components/auth/date-format-provider", () => ({ useDateFormat: () => "MDY" }));
 vi.mock("./actions", () => ({
   addCompanyNoteAction: vi.fn(),
