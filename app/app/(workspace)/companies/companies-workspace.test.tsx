@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { CompaniesWorkspace, CompanyDetailWorkspace } from "./companies-workspace";
-import { deleteCompanyActivityAction, deleteCompanyNoteAction, toggleCompanyNotePinnedAction, updateCompanyAction, updateCompanyActivityAction, updateCompanyNoteAction } from "./actions";
+import { deleteCompanyActivityAction, deleteCompanyFileAction, deleteCompanyNoteAction, toggleCompanyNotePinnedAction, updateCompanyAction, updateCompanyActivityAction, updateCompanyNoteAction } from "./actions";
 
 const mocks = vi.hoisted(() => {
   const refresh = vi.fn();
@@ -25,6 +25,7 @@ vi.mock("./actions", () => ({
   deleteCompanyActivityAction: vi.fn(),
   updateCompanyAction: vi.fn(),
   uploadCompanyFileAction: vi.fn(),
+  deleteCompanyFileAction: vi.fn(),
 }));
 vi.mock("./saved-view-actions", () => ({
   saveCompanyViewAction: mocks.saveCompanyViewAction,
@@ -345,5 +346,49 @@ describe("CompanyDetailWorkspace activity editing and deletion", () => {
     expect(screen.getByText("Company owner changed")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete activity" })).not.toBeInTheDocument();
+  });
+});
+
+const companyAttachment = { id: "file-1", filename: "proposal.pdf", mime_type: "application/pdf", size_bytes: 2048, uploaded_by: "user-1", created_at: "2026-04-01T12:00:00.000Z" };
+
+describe("CompanyDetailWorkspace files", () => {
+  const fileProps = { ...companyNoteProps, section: "files" };
+
+  it("lists files with a download link and a working file count, and nothing for an empty list", () => {
+    const { rerender } = render(<CompanyDetailWorkspace {...fileProps} detail={{ ...companyDetail, attachments: [companyAttachment] }} />);
+    expect(screen.getByRole("heading", { name: "Files (1)" })).toBeInTheDocument();
+    expect(screen.getByText("proposal.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("href", `/app/companies/files/${companyAttachment.id}`);
+
+    rerender(<CompanyDetailWorkspace {...fileProps} detail={{ ...companyDetail, attachments: [] }} />);
+    expect(screen.getByRole("heading", { name: "Files (0)" })).toBeInTheDocument();
+    expect(screen.getByText("No files have been uploaded.")).toBeInTheDocument();
+  });
+
+  it("deletes a file after confirmation and refreshes", async () => {
+    const user = userEvent.setup();
+    let finishAction!: (response: { ok: boolean; message: string }) => void;
+    vi.mocked(deleteCompanyFileAction).mockReset();
+    vi.mocked(deleteCompanyFileAction).mockReturnValueOnce(new Promise((resolve) => { finishAction = resolve; }));
+    render(<CompanyDetailWorkspace {...fileProps} detail={{ ...companyDetail, attachments: [companyAttachment] }} />);
+
+    await user.click(screen.getByRole("button", { name: "Delete proposal.pdf" }));
+    await user.click(screen.getByRole("button", { name: "Keep file" }));
+    expect(vi.mocked(deleteCompanyFileAction)).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Delete proposal.pdf" }));
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+    finishAction({ ok: true, message: "File deleted." });
+    expect(await screen.findByRole("status")).toHaveTextContent("File deleted.");
+    await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
+    expect(vi.mocked(deleteCompanyFileAction).mock.calls[0]?.[1].get("companyId")).toBe(companyDetail.company.id);
+    expect(vi.mocked(deleteCompanyFileAction).mock.calls[0]?.[1].get("fileId")).toBe(companyAttachment.id);
+  });
+
+  it("hides the delete control when the user cannot edit the company", () => {
+    render(<CompanyDetailWorkspace {...fileProps} canEdit={false} detail={{ ...companyDetail, attachments: [companyAttachment] }} />);
+    expect(screen.queryByRole("button", { name: "Delete proposal.pdf" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download" })).toBeInTheDocument();
   });
 });

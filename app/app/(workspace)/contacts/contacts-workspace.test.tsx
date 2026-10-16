@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ContactListRow, ContactSavedView } from "@/lib/contacts/repository";
 import type { ContactViewColumn } from "@/lib/contacts/schema";
 import { ContactDetailWorkspace, ContactsWorkspace } from "./contacts-workspace";
-import { archiveContactAction, createContactAction, deleteContactActivityAction, deleteContactNoteAction, toggleContactNotePinnedAction, updateContactAction, updateContactActivityAction, updateContactNoteAction } from "./actions";
+import { archiveContactAction, createContactAction, deleteContactActivityAction, deleteContactFileAction, deleteContactNoteAction, toggleContactNotePinnedAction, updateContactAction, updateContactActivityAction, updateContactNoteAction } from "./actions";
 
 const routerMocks = vi.hoisted(() => ({ refresh: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => routerMocks }));
@@ -17,6 +17,7 @@ vi.mock("./actions", () => ({
   logContactActivityAction: vi.fn(),
   updateContactAction: vi.fn(),
   uploadContactFileAction: vi.fn(),
+  deleteContactFileAction: vi.fn(),
   toggleContactNotePinnedAction: vi.fn(),
   updateContactNoteAction: vi.fn(),
   deleteContactNoteAction: vi.fn(),
@@ -417,5 +418,48 @@ describe("ContactDetailWorkspace activity editing and deletion", () => {
     expect(screen.getByText("Contact owner changed")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit activity" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete activity" })).not.toBeInTheDocument();
+  });
+});
+
+const attachment = { id: "file-1", filename: "proposal.pdf", mime_type: "application/pdf", size_bytes: 2048, uploaded_by: "user-1", created_at: "2026-04-01T12:00:00.000Z", storage_path: "workspace-1/contact-1/file-1-proposal.pdf" };
+
+describe("Contact files", () => {
+  it("lists files with a download link and a working file count, and nothing for an empty list", () => {
+    const { rerender } = render(<ContactDetailWorkspace {...detailProps} attachments={[attachment]} view="files" />);
+    expect(screen.getByRole("heading", { name: "Files (1)" })).toBeInTheDocument();
+    expect(screen.getByText("proposal.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute("href", `/app/contacts/files/${attachment.id}`);
+
+    rerender(<ContactDetailWorkspace {...detailProps} attachments={[]} view="files" />);
+    expect(screen.getByRole("heading", { name: "Files (0)" })).toBeInTheDocument();
+    expect(screen.getByText("No files yet")).toBeInTheDocument();
+  });
+
+  it("deletes a file after confirmation and refreshes", async () => {
+    const user = userEvent.setup();
+    let finishAction!: (response: { ok: boolean; message: string }) => void;
+    vi.mocked(deleteContactFileAction).mockReset();
+    vi.mocked(deleteContactFileAction).mockReturnValueOnce(new Promise((resolve) => { finishAction = resolve; }));
+    const refreshCallsBefore = routerMocks.refresh.mock.calls.length;
+    render(<ContactDetailWorkspace {...detailProps} attachments={[attachment]} view="files" />);
+
+    await user.click(screen.getByRole("button", { name: "Delete proposal.pdf" }));
+    await user.click(screen.getByRole("button", { name: "Keep file" }));
+    expect(vi.mocked(deleteContactFileAction)).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Delete proposal.pdf" }));
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
+    finishAction({ ok: true, message: "File deleted." });
+    expect(await screen.findByRole("status")).toHaveTextContent("File deleted.");
+    await waitFor(() => expect(routerMocks.refresh.mock.calls.length).toBe(refreshCallsBefore + 1));
+    expect(vi.mocked(deleteContactFileAction).mock.calls[0]?.[1].get("contactId")).toBe(populatedContact.id);
+    expect(vi.mocked(deleteContactFileAction).mock.calls[0]?.[1].get("fileId")).toBe(attachment.id);
+  });
+
+  it("hides the delete control when the user cannot edit the contact", () => {
+    render(<ContactDetailWorkspace {...detailProps} attachments={[attachment]} canEdit={false} view="files" />);
+    expect(screen.queryByRole("button", { name: "Delete proposal.pdf" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Download" })).toBeInTheDocument();
   });
 });

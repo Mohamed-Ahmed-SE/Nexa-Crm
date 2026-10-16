@@ -11,6 +11,7 @@ import { findContactDuplicates, normalizeContactEmail, normalizeContactPhone, ty
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { contactActivityInputSchema, contactNoteInputSchema, contactTaskInputSchema } from "@/lib/contacts/engagement-schema";
 import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
+import { deleteWorkspaceAttachment } from "@/lib/attachments/delete";
 import { replaceEntityTags, verifyWorkspaceTagIds } from "@/lib/tags/entity-tags";
 
 export type ContactActionState = { ok?: boolean; refreshRequired?: boolean; message?: string; fieldErrors?: Record<string, string[]>; duplicateMatches?: ContactDuplicate[]; tagWarning?: boolean };
@@ -394,6 +395,18 @@ export async function uploadContactFileAction(_previous: ContactActionState, for
   }
   revalidatePath(`/app/contacts/${id.data}`);
   return { ok: true, message: "File uploaded." };
+}
+
+export async function deleteContactFileAction(_previous: ContactActionState, form: FormData): Promise<ContactActionState> {
+  const id = contactIdSchema.safeParse(text(form, "contactId"));
+  const fileId = contactIdSchema.safeParse(text(form, "fileId"));
+  if (!id.success || !fileId.success) return { message: "This file could not be identified." };
+  const { context, supabase, contact, error } = await editableContact(id.data);
+  if (error || !supabase || !contact) return { message: error ?? "Contact not found." };
+  const result = await deleteWorkspaceAttachment(supabase, "contact-attachments", { workspaceId: context.workspaceId, entityType: "contact", entityId: id.data, attachmentId: fileId.data });
+  if (!result.ok) return { message: result.message };
+  revalidatePath(`/app/contacts/${id.data}`);
+  return { ok: true, message: "File deleted." };
 }
 
 type TaskCompletionActivity = {

@@ -7,6 +7,7 @@ import { companyActivityInputSchema, companyIdSchema, companyInputSchema, compan
 import { getCompany } from "@/lib/companies/repository";
 import { findCompanyDuplicates, type CompanyDuplicateCandidate } from "@/lib/companies/duplicates";
 import { isValidCompanyUploadContent, validateCompanyUploadMetadata } from "@/lib/companies/upload";
+import { deleteWorkspaceAttachment } from "@/lib/attachments/delete";
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
@@ -358,4 +359,17 @@ export async function uploadCompanyFileAction(_previous: CompanyActionState, for
   }
   revalidatePath(`/app/companies/${companyId}`);
   return { ok: true };
+}
+
+export async function deleteCompanyFileAction(_previous: CompanyActionState, form: FormData): Promise<CompanyActionState> {
+  const companyId = companyIdSchema.safeParse(value(form, "companyId"));
+  const fileId = companyIdSchema.safeParse(value(form, "fileId"));
+  if (!companyId.success || !fileId.success) return { message: "This file could not be identified." };
+  const access = await companyAccess(companyId.data);
+  if (!access.supabase || !access.company) return { message: access.message ?? "Unable to delete file." };
+  const { context, supabase } = access;
+  const result = await deleteWorkspaceAttachment(supabase, "company-attachments", { workspaceId: context.workspaceId, entityType: "company", entityId: companyId.data, attachmentId: fileId.data });
+  if (!result.ok) return { message: result.message };
+  revalidatePath(`/app/companies/${companyId.data}`);
+  return { ok: true, message: "File deleted." };
 }
