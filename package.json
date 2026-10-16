@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "node --test tests/e2e/unauthenticated-workspace.test.mjs",
-    "test:e2e:auth": "node --test --test-concurrency=1 tests/e2e/authenticated-leads.test.mjs tests/e2e/authenticated-flows.test.mjs tests/e2e/authenticated-search-order.test.mjs tests/e2e/authenticated-invitations.test.mjs"
+    "test:e2e:auth": "node --test --test-concurrency=1 tests/e2e/authenticated-leads.test.mjs tests/e2e/authenticated-flows.test.mjs tests/e2e/authenticated-critical-flows.test.mjs tests/e2e/authenticated-search-order.test.mjs tests/e2e/authenticated-invitations.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

@@ -42,3 +42,5 @@ npm run build
 npm run test:e2e
 npm run test:e2e:auth
 ```
+
+See [`TESTING.md`](TESTING.md) for how to run each check, including local Supabase setup for the authenticated E2E suite and CI guidance.
