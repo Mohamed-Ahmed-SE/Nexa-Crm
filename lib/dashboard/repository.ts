@@ -30,7 +30,7 @@ type DashboardLabelQuery = { workspaceId: string; type: "company" | "contact" | 
 
 function logDashboardQueryError(queryName: string, error: { code?: unknown }) {
   const code = typeof error.code === "string" && error.code ? error.code : "unknown";
-  console.error({ query: queryName, code });
+  console.error(new Error(`Dashboard query failed: ${queryName} (code: ${code})`));
 }
 
 export async function loadWorkspaceDashboard(supabase: Supabase, workspaceId: string, now = new Date()): Promise<WorkspaceDashboardData> {

@@ -78,6 +78,16 @@ function responseFor(
 
 afterEach(() => vi.restoreAllMocks());
 
+type ConsoleErrorSpy = { mock: { calls: unknown[][] } };
+
+function loggedQueryErrorMessages(logDiagnostic: ConsoleErrorSpy) {
+  return logDiagnostic.mock.calls.map(([diagnostic]) => (diagnostic instanceof Error ? diagnostic.message : diagnostic));
+}
+
+function dashboardQueryErrorMessage(queryName: string, code: string) {
+  return `Dashboard query failed: ${queryName} (code: ${code})`;
+}
+
 describe("workspace dashboard repository query boundaries", () => {
   it("preserves core dashboard rows when display-label enrichment reads fail", async () => {
     const logDiagnostic = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -98,12 +108,13 @@ describe("workspace dashboard repository query boundaries", () => {
     expect(dashboard.leads.map(({ id }) => id)).toEqual(["lead-1"]);
     expect(dashboard.tasks.map(({ relatedTo }) => relatedTo)).toEqual([null, null]);
     expect(dashboard.activities[0].relatedTo).toBeNull();
-    expect(logDiagnostic.mock.calls.map(([diagnostic]) => diagnostic)).toEqual(expect.arrayContaining([
-      { query: "get_workspace_report_member_labels", code: "42501" },
-      { query: "companies labels", code: "42501" },
-      { query: "contacts labels", code: "42501" },
-      { query: "leads labels", code: "42501" },
+    expect(loggedQueryErrorMessages(logDiagnostic)).toEqual(expect.arrayContaining([
+      dashboardQueryErrorMessage("get_workspace_report_member_labels", "42501"),
+      dashboardQueryErrorMessage("companies labels", "42501"),
+      dashboardQueryErrorMessage("contacts labels", "42501"),
+      dashboardQueryErrorMessage("leads labels", "42501"),
     ]));
+    for (const [diagnostic] of logDiagnostic.mock.calls) expect(diagnostic).toBeInstanceOf(Error);
     expect(JSON.stringify(logDiagnostic.mock.calls)).not.toContain(unsafeErrorDetails);
   });
 
@@ -115,7 +126,9 @@ describe("workspace dashboard repository query boundaries", () => {
 
     await expect(loadWorkspaceDashboard(supabase as never, workspaceId)).rejects.toBeInstanceOf(DashboardUnavailableError);
 
-    expect(logDiagnostic).toHaveBeenCalledExactlyOnceWith({ query: "list_inactive_workspace_member_ids", code: "42501" });
+    expect(logDiagnostic).toHaveBeenCalledOnce();
+    expect(loggedQueryErrorMessages(logDiagnostic)).toEqual([dashboardQueryErrorMessage("list_inactive_workspace_member_ids", "42501")]);
+    expect(logDiagnostic.mock.calls[0][0]).toBeInstanceOf(Error);
     expect(JSON.stringify(logDiagnostic.mock.calls)).not.toContain(unsafeErrorDetails);
   });
 
@@ -127,7 +140,9 @@ describe("workspace dashboard repository query boundaries", () => {
 
     await expect(loadWorkspaceDashboard(supabase as never, workspaceId)).rejects.toBeInstanceOf(DashboardUnavailableError);
 
-    expect(logDiagnostic).toHaveBeenCalledExactlyOnceWith({ query: "deals", code: "XX000" });
+    expect(logDiagnostic).toHaveBeenCalledOnce();
+    expect(loggedQueryErrorMessages(logDiagnostic)).toEqual([dashboardQueryErrorMessage("deals", "XX000")]);
+    expect(logDiagnostic.mock.calls[0][0]).toBeInstanceOf(Error);
     expect(JSON.stringify(logDiagnostic.mock.calls)).not.toContain(unsafeErrorDetails);
   });
 });
