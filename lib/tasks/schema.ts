@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 
-export const taskViews = ["my", "today", "upcoming", "overdue", "completed", "cancelled", "all"] as const;
+export const taskViews = ["my", "today", "tomorrow", "upcoming", "overdue", "completed", "cancelled", "all"] as const;
 export type TaskView = (typeof taskViews)[number];
 export const taskTypes = ["call", "email", "meeting", "follow_up", "to_do"] as const;
 export const taskPriorities = ["low", "medium", "high"] as const;
@@ -61,6 +61,8 @@ export const createTaskSchema = z.object({
 }).refine((value) => (value.relatedType === null) === (value.relatedId === null), {
   message: "Choose both a related record type and record.", path: ["relatedId"],
 });
+
+export const updateTaskSchema = createTaskSchema;
 
 const localDateTimeSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Enter a valid due date and time.").refine((dueAt) => {
   const parsedDate = new Date(`${dueAt}:00.000Z`);
@@ -140,7 +142,8 @@ export function taskDateBounds(now: Date, timezoneOffset: number, tomorrowTimezo
   const [year, month, day] = localNow.toISOString().slice(0, 10).split("-").map(Number);
   const start = Date.UTC(year, month - 1, day) + timezoneOffset * 60_000;
   const tomorrow = Date.UTC(year, month - 1, day + 1) + tomorrowTimezoneOffset * 60_000;
-  return { start: new Date(start), tomorrow: new Date(tomorrow) };
+  const dayAfterTomorrow = Date.UTC(year, month - 1, day + 2) + tomorrowTimezoneOffset * 60_000;
+  return { start: new Date(start), tomorrow: new Date(tomorrow), dayAfterTomorrow: new Date(dayAfterTomorrow) };
 }
 
 export function taskWeekBounds(now: Date, timezoneOffset: number, weekStartTimezoneOffset: number, nextWeekTimezoneOffset: number) {

@@ -10,8 +10,9 @@ import { getLeadForEdit, saveLead } from "@/lib/leads/repository";
 import { findLeadDuplicates, normalizeLeadEmail, normalizeLeadPhone, type LeadDuplicateCandidate, type LeadDuplicateMatch } from "@/lib/leads/duplicates";
 import { deleteLeadViewAction as deleteSavedView, saveLeadViewAction as saveSavedView, type SavedViewActionState } from "./saved-view-actions";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { replaceEntityTags, verifyWorkspaceTagIds } from "@/lib/tags/entity-tags";
 
-export type LeadActionState = SavedViewActionState & { duplicateMatches?: LeadDuplicateMatch[] };
+export type LeadActionState = SavedViewActionState & { duplicateMatches?: LeadDuplicateMatch[]; tagWarning?: boolean };
 
 function textValue(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -30,6 +31,7 @@ function parseForm(formData: FormData) {
     ownerId: textValue(formData, "ownerId"),
     estimatedValue: textValue(formData, "estimatedValue"),
     notesSummary: textValue(formData, "notesSummary"),
+    tagIds: formData.getAll("tagIds"),
   });
 }
 
@@ -72,6 +74,7 @@ export async function createLeadAction(_previous: LeadActionState, formData: For
   const ownerId = canReassign ? parsed.data.ownerId : context.userId;
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { message: "Authentication is not configured." };
+  if (!await verifyWorkspaceTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return { message: "Choose tags from this workspace." };
   if (!await verifySource(supabase, context.workspaceId, parsed.data.sourceId)) return { message: "Select an active lead source in this workspace." };
   if (canReassign && !await verifyOwner(supabase, context.workspaceId, ownerId)) return { message: "Select an active owner in this workspace." };
   const { data: workspace, error: workspaceError } = await supabase.from("workspaces").select("default_currency").eq("id", context.workspaceId).maybeSingle();
@@ -92,8 +95,10 @@ export async function createLeadAction(_previous: LeadActionState, formData: For
 
   const { data: createdLead, error } = await saveLead(supabase, context.workspaceId, context.userId, { ...parsed.data, ownerId, currency: workspace.default_currency });
   if (error || !createdLead?.id) return { message: "Lead could not be created. Check your access and try again." };
+  const tagsSaved = !parsed.data.tagIds.length || await replaceEntityTags(supabase, context.workspaceId, "lead", createdLead.id, parsed.data.tagIds);
   revalidatePath("/app/leads");
   const logged = await logLeadCreation(supabase, context.workspaceId, context.userId, createdLead.id);
+  if (!tagsSaved) return { ok: true, message: "Lead added, but its tags could not be saved. Edit the lead to try again.", tagWarning: true };
   return logged
     ? { ok: true, message: "Lead added." }
     : { ok: true, message: "Lead added, but its activity could not be recorded." };
@@ -394,6 +399,7 @@ export async function updateLeadAction(_previous: LeadActionState, formData: For
 
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { message: "Authentication is not configured." };
+  if (!await verifyWorkspaceTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return { message: "Choose tags from this workspace." };
   const { data: current, error: currentError } = await getLeadForEdit(supabase, context.workspaceId, parsedId.data);
   if (currentError || !current) return { message: "Lead not found in this workspace." };
   if (!await verifySource(supabase, context.workspaceId, parsed.data.sourceId, current.source_id)) {
@@ -419,6 +425,7 @@ export async function updateLeadAction(_previous: LeadActionState, formData: For
   const { data: updated, error } = await saveLead(supabase, context.workspaceId, context.userId, { ...parsed.data, id: parsedId.data, currency: current.currency });
   if (error) return { message: "Lead could not be updated. Check your access and try again." };
   if (!updated) return { message: "Lead not found or no longer editable." };
+  const tagsSaved = await replaceEntityTags(supabase, context.workspaceId, "lead", parsedId.data, parsed.data.tagIds);
   const ownerChanged = current.owner_id !== parsed.data.ownerId;
   const statusChanged = current.status !== parsed.data.status;
   const ownerActivityLogged = !ownerChanged || await logLeadOwnerChange({
@@ -434,6 +441,7 @@ export async function updateLeadAction(_previous: LeadActionState, formData: For
   );
   revalidatePath("/app/leads");
   revalidatePath(`/app/leads/${parsedId.data}`);
+  if (!tagsSaved) return { ok: true, message: "Lead details were updated, but tags could not be saved. Existing tags were retained where possible.", tagWarning: true };
   if (!ownerActivityLogged && !statusActivityLogged) {
     return { ok: true, message: "Lead updated, but one or more activities could not be recorded." };
   }

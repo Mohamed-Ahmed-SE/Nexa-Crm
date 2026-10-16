@@ -10,7 +10,7 @@ describe("Contacts page saved-view selection", () => {
     };
 
     expect(applyContactSavedView(params, view)).toEqual({
-      q: "Acme", lifecycle: "customer", companyId: "", ownerId: "unassigned", sort: "name_desc", page: 2,
+      q: "Acme", lifecycle: "customer", companyId: "", ownerId: "unassigned", tagId: "", sort: "name_desc", page: 2,
     });
   });
 });

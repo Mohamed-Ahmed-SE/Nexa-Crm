@@ -42,13 +42,14 @@ export async function listWorkspaceTasks(supabase: Supabase, { workspaceId, user
   workspaceId: string; userId: string; params: TaskSearchParams; canReassign: boolean; now?: Date;
 }) {
   const { view } = canReassign ? params : restrictAllTasksView(params);
-  const { start, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
+  const { start, tomorrow, dayAfterTomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
   let query = supabase.from("tasks").select("id,title,description,task_type,status,priority,due_at,reminder_at,assigned_to,created_by,related_entity_type,related_entity_id,completed_at", { count: "exact" })
     .eq("workspace_id", workspaceId);
   if (!canReassign) query = query.eq("assigned_to", userId);
   switch (view) {
     case "my": query = query.eq("assigned_to", userId).eq("status", "open"); break;
     case "today": query = query.eq("status", "open").gte("due_at", start.toISOString()).lt("due_at", tomorrow.toISOString()); break;
+    case "tomorrow": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()).lt("due_at", dayAfterTomorrow.toISOString()); break;
     case "upcoming": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()); break;
     case "overdue": query = query.eq("status", "open").lt("due_at", start.toISOString()); break;
     case "completed": query = query.eq("status", "completed"); break;
@@ -96,13 +97,14 @@ export async function listTaskCalendarRecords(supabase: Supabase, { workspaceId,
   const nextMonth = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 7);
   const end = taskLocalDateBounds(`${nextMonth}-01`, params.timeZone).start;
   const { view } = canReassign ? params : restrictAllTasksView(params);
-  const { start: today, tomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
+  const { start: today, tomorrow, dayAfterTomorrow } = taskDateBounds(now, params.timezoneOffset, params.tomorrowTimezoneOffset);
   let query = supabase.from("tasks").select("due_at").eq("workspace_id", workspaceId).not("due_at", "is", null)
     .gte("due_at", start.toISOString()).lt("due_at", end.toISOString());
   if (!canReassign) query = query.eq("assigned_to", userId);
   switch (view) {
     case "my": query = query.eq("assigned_to", userId).eq("status", "open"); break;
     case "today": query = query.eq("status", "open").gte("due_at", today.toISOString()).lt("due_at", tomorrow.toISOString()); break;
+    case "tomorrow": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()).lt("due_at", dayAfterTomorrow.toISOString()); break;
     case "upcoming": query = query.eq("status", "open").gte("due_at", tomorrow.toISOString()); break;
     case "overdue": query = query.eq("status", "open").lt("due_at", today.toISOString()); break;
     case "completed": query = query.eq("status", "completed"); break;

@@ -11,14 +11,15 @@ import { findContactDuplicates, normalizeContactEmail, normalizeContactPhone, ty
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { contactActivityInputSchema, contactNoteInputSchema, contactTaskInputSchema } from "@/lib/contacts/engagement-schema";
 import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
+import { replaceEntityTags, verifyWorkspaceTagIds } from "@/lib/tags/entity-tags";
 
-export type ContactActionState = { ok?: boolean; refreshRequired?: boolean; message?: string; fieldErrors?: Record<string, string[]>; duplicateMatches?: ContactDuplicate[] };
+export type ContactActionState = { ok?: boolean; refreshRequired?: boolean; message?: string; fieldErrors?: Record<string, string[]>; duplicateMatches?: ContactDuplicate[]; tagWarning?: boolean };
 const text = (form: FormData, key: string) => { const formEntry = form.get(key); return typeof formEntry === "string" ? formEntry : ""; };
 function parseContact(form: FormData) {
   return contactInputSchema.safeParse({
     firstName: text(form, "firstName"), lastName: text(form, "lastName"), email: text(form, "email"), phone: text(form, "phone"),
     address: text(form, "address"), jobTitle: text(form, "jobTitle"), companyId: text(form, "companyId"), ownerId: text(form, "ownerId"),
-    lifecycleStatus: text(form, "lifecycleStatus"), linkedinUrl: text(form, "linkedinUrl"),
+    lifecycleStatus: text(form, "lifecycleStatus"), linkedinUrl: text(form, "linkedinUrl"), tagIds: form.getAll("tagIds"),
   });
 }
 
@@ -54,6 +55,7 @@ export async function createContactAction(_previous: ContactActionState, form: F
   if (!parsed.success) return { message: "Check the highlighted fields.", fieldErrors: parsed.error.flatten().fieldErrors };
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { message: "Authentication is not configured." };
+  if (!await verifyWorkspaceTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return { message: "Choose tags from this workspace." };
   const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
   const ownerId = canReassign ? parsed.data.ownerId : context.userId;
   if (!await verifyCompany(supabase, context.workspaceId, parsed.data.companyId)) return { message: "Select an active company in this workspace." };
@@ -84,8 +86,10 @@ export async function createContactAction(_previous: ContactActionState, form: F
     linkedin_url: parsed.data.linkedinUrl,
   }).select("id").maybeSingle();
   if (error || !createdContact?.id) return { message: "Contact could not be created. Check your access and try again." };
+  const tagsSaved = !parsed.data.tagIds.length || await replaceEntityTags(supabase, context.workspaceId, "contact", createdContact.id, parsed.data.tagIds);
   revalidatePath("/app/contacts");
   const logged = await logContactCreation(supabase, context.workspaceId, context.userId, createdContact.id);
+  if (!tagsSaved) return { ok: true, message: "Contact added, but its tags could not be saved. Edit the contact to try again.", tagWarning: true };
   return logged
     ? { ok: true, message: "Contact added." }
     : { ok: true, message: "Contact added, but its activity could not be recorded." };
@@ -136,6 +140,7 @@ export async function updateContactAction(_previous: ContactActionState, form: F
   if (!parsed.success) return { message: "Check the highlighted fields.", fieldErrors: parsed.error.flatten().fieldErrors };
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { message: "Authentication is not configured." };
+  if (!await verifyWorkspaceTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return { message: "Choose tags from this workspace." };
   const { data: current, error } = await getContactForEdit(supabase, context.workspaceId, id.data);
   if (error || !current) return { message: "Contact not found in this workspace." };
   if (!contactCanBeEdited(hasWorkspacePermission(context.role, "crm.edit.all"), current.owner_id, context.userId)) return { message: "You can update only contacts assigned to you." };
@@ -143,8 +148,10 @@ export async function updateContactAction(_previous: ContactActionState, form: F
   const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
   if (parsed.data.ownerId !== current.owner_id && !canReassign) return { message: "You do not have permission to reassign this contact." };
   if (canReassign && parsed.data.ownerId !== current.owner_id && !await verifyOwner(supabase, context.workspaceId, parsed.data.ownerId)) return { message: "Select an active owner in this workspace." };
-  const { data, error: updateError } = await supabase.from("contacts").update({ ...parsed.data, owner_id: canReassign ? parsed.data.ownerId : current.owner_id }).eq("workspace_id", context.workspaceId).eq("id", id.data).is("archived_at", null).select("id").maybeSingle();
+  const { tagIds, ...contactFields } = parsed.data;
+  const { data, error: updateError } = await supabase.from("contacts").update({ ...contactFields, owner_id: canReassign ? parsed.data.ownerId : current.owner_id }).eq("workspace_id", context.workspaceId).eq("id", id.data).is("archived_at", null).select("id").maybeSingle();
   if (updateError || !data) return { message: "Contact could not be updated. Check your access and try again." };
+  const tagsSaved = await replaceEntityTags(supabase, context.workspaceId, "contact", id.data, tagIds);
   const ownerChanged = current.owner_id !== parsed.data.ownerId;
   const statusChanged = current.lifecycle_status !== parsed.data.lifecycleStatus;
   let ownerActivityLogged = true;
@@ -168,6 +175,7 @@ export async function updateContactAction(_previous: ContactActionState, form: F
     supabase, context.workspaceId, context.userId, id.data, current.lifecycle_status, parsed.data.lifecycleStatus,
   );
   revalidatePath("/app/contacts"); revalidatePath(`/app/contacts/${id.data}`);
+  if (!tagsSaved) return { ok: true, message: "Contact details were updated, but tags could not be saved. Existing tags were retained where possible.", tagWarning: true };
   if (!ownerActivityLogged && !statusActivityLogged) {
     return { ok: true, message: "Contact updated, but one or more activities could not be recorded." };
   }

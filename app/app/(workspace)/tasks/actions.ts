@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
-import { createTaskSchema, rescheduleTaskSchema, taskIdSchema } from "@/lib/tasks/schema";
+import { createTaskSchema, rescheduleTaskSchema, taskIdSchema, updateTaskSchema } from "@/lib/tasks/schema";
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -39,6 +39,47 @@ export async function createTaskAction(_previous: TaskActionState, form: FormDat
   revalidatePath("/app/tasks");
   if (parsed.data.relatedType === "lead" && parsed.data.relatedId) revalidatePath(`/app/leads/${parsed.data.relatedId}`);
   return { ok: true, message: "Task created." };
+}
+
+export async function updateTaskAction(taskId: string, _previous: TaskActionState, form: FormData): Promise<TaskActionState> {
+  const parsedId = taskIdSchema.safeParse(taskId);
+  if (!parsedId.success) return { message: "This task could not be identified." };
+  const context = await requirePermission("crm.edit.own");
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return { message: "Authentication is not configured." };
+  const parsed = updateTaskSchema.safeParse({
+    title: value(form, "title"), description: value(form, "description"), type: value(form, "type"), priority: value(form, "priority"),
+    dueAt: normalizeContactDateTime(value(form, "dueAt"), value(form, "timezoneOffset")), assignedTo: value(form, "assignedTo"),
+    relatedType: value(form, "relatedType"), relatedId: value(form, "relatedId"),
+  });
+  if (!parsed.success) return { message: "Check the task details and try again.", fieldErrors: parsed.error.flatten().fieldErrors };
+
+  const { data: task, error: taskError } = await supabase.from("tasks").select("id,status,assigned_to,related_entity_type,related_entity_id").eq("workspace_id", context.workspaceId).eq("id", parsedId.data).maybeSingle();
+  if (taskError || !task || task.status !== "open") return { message: "This open task could not be found in your workspace." };
+  const canEditAll = hasWorkspacePermission(context.role, "crm.edit.all");
+  const ownsRelated = task.related_entity_type && task.related_entity_id ? await isRelationOwnedBy(supabase, context.workspaceId, context.userId, task.related_entity_type, task.related_entity_id) : false;
+  if (!canEditAll && task.assigned_to !== context.userId && !ownsRelated) return { message: "You can edit only tasks assigned to you or linked to a record you own." };
+
+  const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
+  if (!canReassign && parsed.data.assignedTo !== task.assigned_to) return { message: "You can assign tasks only to yourself." };
+  const assignedTo = canReassign ? parsed.data.assignedTo : task.assigned_to;
+  if (assignedTo && assignedTo !== task.assigned_to) {
+    const { data: members, error } = await supabase.rpc("list_reassignable_workspace_members", { target_workspace_id: context.workspaceId, target_user_id: assignedTo, target_lead_id: null });
+    if (error || !members?.some((member: { user_id: string }) => member.user_id === assignedTo)) return { message: "Choose an active member of this workspace." };
+  }
+  if (parsed.data.relatedType && parsed.data.relatedId && !await validRelation(supabase, context.workspaceId, context.userId, canReassign, parsed.data.relatedType, parsed.data.relatedId)) return { message: "Choose an active related record in this workspace that you can access." };
+
+  const { data: updated, error: updateError } = await supabase.from("tasks").update({
+    title: parsed.data.title, description: parsed.data.description, task_type: parsed.data.type, priority: parsed.data.priority,
+    due_at: parsed.data.dueAt, assigned_to: assignedTo, related_entity_type: parsed.data.relatedType, related_entity_id: parsed.data.relatedId,
+  }).eq("workspace_id", context.workspaceId).eq("id", parsedId.data).eq("status", "open").select("id").maybeSingle();
+  if (updateError || !updated) return { message: "Task could not be updated. Refresh and try again." };
+  revalidatePath("/app/tasks");
+  if (task.related_entity_type && task.related_entity_id) revalidatePath(relationPath(task.related_entity_type, task.related_entity_id));
+  if (parsed.data.relatedType && parsed.data.relatedId && (parsed.data.relatedType !== task.related_entity_type || parsed.data.relatedId !== task.related_entity_id)) {
+    revalidatePath(relationPath(parsed.data.relatedType, parsed.data.relatedId));
+  }
+  return { ok: true, message: "Task updated." };
 }
 
 export async function rescheduleTaskAction(taskId: string, form: FormData): Promise<TaskActionState> {

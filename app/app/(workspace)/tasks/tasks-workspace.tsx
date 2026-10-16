@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import styles from "./tasks-workspace.module.css";
-import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction, type TaskActionState } from "./actions";
+import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction, updateTaskAction, type TaskActionState } from "./actions";
 import { taskPageSize, taskTypes, type TaskSearchParams } from "@/lib/tasks/schema";
 import type { TaskOption, TaskOwner, TaskOverviewCounts, TaskRow } from "@/lib/tasks/repository";
 import { useDateFormat } from "@/components/auth/date-format-provider";
 import { formatCalendarDateTime, type DateFormat } from "@/lib/preferences/date-format";
 
 const blankState: TaskActionState = {};
-const viewLabels = { my: "My Tasks", today: "Today", upcoming: "Upcoming", overdue: "Overdue", completed: "Completed", cancelled: "Cancelled Tasks", all: "All Tasks" } as const;
+const viewLabels = { my: "My Tasks", today: "Today", tomorrow: "Tomorrow", upcoming: "Upcoming", overdue: "Overdue", completed: "Completed", cancelled: "Cancelled Tasks", all: "All Tasks" } as const;
 const typeLabels: Record<string, string> = { call: "Call", email: "Email", meeting: "Meeting", follow_up: "Follow-up", to_do: "To-do" };
 const priorityLabels = { low: "Low", medium: "Medium", high: "High" } as const;
 const relationLabels = { company: "Company", contact: "Contact", lead: "Lead", deal: "Deal" } as const;
@@ -35,6 +35,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
   const [noticeIsError, setNoticeIsError] = useState(false);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [reschedulingTask, setReschedulingTask] = useState<TaskRow | null>(null);
+  const [editingTask, setEditingTask] = useState<TaskRow | null>(null);
   const [visibleColumns, setVisibleColumns] = useState(allTaskColumnsVisible);
   useEffect(() => { if (!canCreate) setFormOpen(false); }, [canCreate]);
   const pageCount = Math.max(1, Math.ceil(matchedCount / taskPageSize));
@@ -118,7 +119,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
           {visibleColumns.Assignee && <td data-label="Assignee">{task.assigned_to ? task.assigneeLabel ?? owners.find(({ id }) => id === task.assigned_to)?.label ?? (task.assigned_to === currentUserId ? "You" : "Workspace member") : "Unassigned"}</td>}
           {visibleColumns.Priority && <td data-label="Priority"><span className={`tasks-priority priority-${task.priority}`}>{priorityLabels[task.priority]}</span></td>}
           {visibleColumns.Status && <td data-label="Status"><span className={`tasks-status status-${task.status}`}>{task.status === "completed" ? "Completed" : task.status === "cancelled" ? "Cancelled" : "Open"}</span></td>}
-          <td data-label="Actions">{canEdit && task.status === "open" && <div className="tasks-row-actions"><button aria-label={task.due_at ? `Reschedule ${task.title}` : `Set due date for ${task.title}`} className="tasks-secondary-button" onClick={() => setReschedulingTask(task)} type="button">{task.due_at ? "Reschedule" : "Set due date"}</button><button aria-label={`Complete ${task.title}`} className="tasks-complete-button" disabled={pendingId === task.id} onClick={() => complete(task.id)} type="button"><Check aria-hidden="true" size={14} />{pendingId === task.id ? "Completing…" : "Complete"}</button><button aria-label={`Cancel ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "cancel")} type="button">{pendingId === task.id ? "Cancelling…" : "Cancel"}</button></div>}{canEdit && task.status === "cancelled" && <div className="tasks-row-actions"><button aria-label={`Reopen ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "reopen")} type="button">{pendingId === task.id ? "Reopening…" : "Reopen"}</button></div>}</td>
+          <td data-label="Actions">{canEdit && task.status === "open" && <div className="tasks-row-actions"><button aria-label={`Edit ${task.title}`} className="tasks-secondary-button" onClick={() => setEditingTask(task)} type="button">Edit</button><button aria-label={task.due_at ? `Reschedule ${task.title}` : `Set due date for ${task.title}`} className="tasks-secondary-button" onClick={() => setReschedulingTask(task)} type="button">{task.due_at ? "Reschedule" : "Set due date"}</button><button aria-label={`Complete ${task.title}`} className="tasks-complete-button" disabled={pendingId === task.id} onClick={() => complete(task.id)} type="button"><Check aria-hidden="true" size={14} />{pendingId === task.id ? "Completing…" : "Complete"}</button><button aria-label={`Cancel ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "cancel")} type="button">{pendingId === task.id ? "Cancelling…" : "Cancel"}</button></div>}{canEdit && task.status === "cancelled" && <div className="tasks-row-actions"><button aria-label={`Reopen ${task.title}`} className="tasks-secondary-button" disabled={pendingId === task.id} onClick={() => changeTaskStatus(task.id, "reopen")} type="button">{pendingId === task.id ? "Reopening…" : "Reopen"}</button></div>}</td>
         </tr>)}</tbody></table></div>
       {tasks.length === 0 && <div className="tasks-empty"><CalendarDays aria-hidden="true" size={22} /><h2>{hasFilters(params) ? "No matching tasks" : params.view === "completed" ? "No completed tasks yet" : "No tasks to show"}</h2><p>{hasFilters(params) ? "Try changing or clearing your search and filters." : params.view === "my" ? "Tasks assigned to you will appear here." : params.view === "all" ? "Open tasks in this workspace will appear here." : `Tasks in ${viewLabels[params.view].toLowerCase()} will appear here.`}</p>{canCreate && !hasFilters(params) && params.view === "my" && <button className="tasks-secondary-button" onClick={() => setFormOpen(true)} type="button">Create your first task</button>}</div>}
       <nav aria-label="Task pages" className="tasks-pagination"><span>{matchedCount === 0 ? "0 tasks" : `${(params.page - 1) * taskPageSize + 1}–${Math.min(params.page * taskPageSize, matchedCount)} of ${matchedCount} tasks`}</span><div>{params.page <= 1 ? <span aria-disabled="true" className="is-disabled">Previous</span> : <Link href={tasksHref({ ...params, page: params.page - 1 })}>Previous</Link>}<span>Page {params.page} of {pageCount}</span>{params.page >= pageCount ? <span aria-disabled="true" className="is-disabled">Next</span> : <Link href={tasksHref({ ...params, page: params.page + 1 })}>Next</Link>}</div></nav>
@@ -130,6 +131,7 @@ export function TasksWorkspace({ tasks, owners, options, matchedCount, overview,
     <p aria-live={noticeIsError ? "assertive" : "polite"} className="tasks-notice" role={noticeIsError ? "alert" : "status"}>{notice}</p>
     {canCreate && formOpen && <TaskForm currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} initialContext={createContext} onClose={() => setFormOpen(false)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setFormOpen(false); router.refresh(); }} />}
     {reschedulingTask && <RescheduleTaskDialog task={reschedulingTask} onClose={() => setReschedulingTask(null)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setReschedulingTask(null); router.refresh(); }} />}
+    {editingTask && <EditTaskDialog currentUserId={currentUserId} owners={owners} options={options} canReassign={canReassign} task={editingTask} onClose={() => setEditingTask(null)} onSaved={(message) => { setNotice(message); setNoticeIsError(false); setEditingTask(null); router.refresh(); }} />}
   </main>;
 }
 
@@ -316,6 +318,54 @@ function RescheduleTaskDialog({ task, onClose, onSaved }: { task: TaskRow; onClo
         <label className="tasks-field">Due date and time<input aria-describedby={dueAtError ? "reschedule-date-error" : undefined} aria-invalid={Boolean(dueAtError)} autoFocus defaultValue={task.due_at ? localDateTimeValue(task.due_at) : ""} name="dueAt" required type="datetime-local" />{dueAtError && <small id="reschedule-date-error">{dueAtError}</small>}</label>
         {result.message && !result.ok && <p className="tasks-form-error" role="alert">{result.message}</p>}
         <footer className="tasks-form-actions"><button className="tasks-secondary-button" disabled={pending} onClick={onClose} type="button">Cancel</button><button className="tasks-primary-button" disabled={pending} type="submit">{pending ? "Saving…" : "Save due date"}</button></footer>
+      </form>
+    </div>
+  </dialog>;
+}
+
+function EditTaskDialog({ task, options, owners, canReassign, currentUserId, onClose, onSaved }: { task: TaskRow; options: TaskOption[]; owners: TaskOwner[]; canReassign: boolean; currentUserId: string; onClose: () => void; onSaved: (message: string) => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [result, setResult] = useState<TaskActionState>(blankState);
+  const [pending, startTransition] = useTransition();
+  const [relatedType, setRelatedType] = useState(task.related_entity_type ?? "");
+  const [relatedId, setRelatedId] = useState(task.related_entity_id ?? "");
+  function submit(formData: FormData) {
+    formData.set("relatedType", relatedType);
+    formData.set("relatedId", relatedId);
+    const dueAt = formData.get("dueAt");
+    const selectedDate = typeof dueAt === "string" && dueAt ? new Date(dueAt) : null;
+    if (selectedDate && (Number.isNaN(selectedDate.getTime()) || localDateTimeValue(selectedDate) !== dueAt)) {
+      setResult({ message: "Choose another local due date and time.", fieldErrors: { dueAt: ["This time does not exist because the clocks change. Choose another time."] } });
+      return;
+    }
+    formData.set("timezoneOffset", String(selectedDate ? selectedDate.getTimezoneOffset() : new Date().getTimezoneOffset()));
+    setResult(blankState);
+    startTransition(async () => {
+      const next = await updateTaskAction(task.id, blankState, formData);
+      setResult(next);
+      if (next.ok) onSaved(next.message ?? "Task updated.");
+    });
+  }
+  const relatedOptions = options.filter((option) => option.type === relatedType);
+  const errors = result.fieldErrors ?? {};
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+    return () => { if (dialog.open) { if (typeof dialog.close === "function") dialog.close(); else dialog.removeAttribute("open"); } };
+  }, []);
+  return <dialog aria-labelledby="edit-task-title" aria-modal="true" className="tasks-dialog" onCancel={(event) => { if (pending) event.preventDefault(); else onClose(); }} ref={dialogRef}>
+    <div className="tasks-dialog-content"><header className="tasks-dialog-header"><div><h2 id="edit-task-title">Edit task</h2><p>Update this task&rsquo;s details.</p></div><button aria-label="Close edit task form" className="tasks-close-button" disabled={pending} onClick={onClose} type="button">×</button></header>
+      <form action={submit} className="tasks-form">
+        <label className="tasks-field">Task title<input autoFocus defaultValue={task.title} maxLength={200} name="title" required />{errors.title?.[0] && <small>{errors.title[0]}</small>}</label>
+        <div className="tasks-form-grid"><label className="tasks-field">Type<select defaultValue={task.task_type} name="type">{taskTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}</select></label><label className="tasks-field">Priority<select defaultValue={task.priority} name="priority">{Object.entries(priorityLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label></div>
+        <label className="tasks-field">Due date<input defaultValue={task.due_at ? localDateTimeValue(task.due_at) : ""} name="dueAt" type="datetime-local" />{errors.dueAt?.[0] && <small>{errors.dueAt[0]}</small>}</label>
+        <label className="tasks-field">Description<textarea defaultValue={task.description ?? ""} maxLength={5000} name="description" rows={3} /></label>
+        <div className="tasks-form-grid"><label className="tasks-field">Related record type<select onChange={(event) => { setRelatedType(event.target.value); setRelatedId(""); }} value={relatedType}><option value="">No related record</option>{Object.entries(relationLabels).filter(([type]) => options.some((option) => option.type === type) || type === task.related_entity_type).map(([type, label]) => <option key={type} value={type}>{label}</option>)}</select></label><label className="tasks-field">Related record<select disabled={!relatedType} onChange={(event) => setRelatedId(event.target.value)} value={relatedId}><option value="">{relatedType ? "Choose a record" : "No related record"}</option>{relatedOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}{relatedId && !relatedOptions.some((option) => option.id === relatedId) && <option value={relatedId}>{task.relation?.label ?? "Current related record"}</option>}</select>{errors.relatedId?.[0] && <small>{errors.relatedId[0]}</small>}</label></div>
+        {canReassign ? <label className="tasks-field">Assign to<select defaultValue={task.assigned_to ?? ""} name="assignedTo"><option value="">Unassigned</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select>{errors.assignedTo?.[0] && <small>{errors.assignedTo[0]}</small>}</label> : <input name="assignedTo" type="hidden" value={task.assigned_to ?? currentUserId} />}
+        {result.message && <p className={result.ok ? "tasks-form-success" : "tasks-form-error"} role={result.ok ? "status" : "alert"}>{result.message}</p>}
+        <footer className="tasks-form-actions"><button className="tasks-secondary-button" disabled={pending} onClick={onClose} type="button">Cancel</button><button className="tasks-primary-button" disabled={pending} type="submit">{pending ? "Saving…" : "Save changes"}</button></footer>
       </form>
     </div>
   </dialog>;

@@ -81,12 +81,14 @@ function setupOwnerChange({ activityError = null, oldOwnerLabel = "Alex Owner" }
     })),
   };
   mocks.activityInsert.mockResolvedValue({ error: activityError });
+  const entityTagsRead = { eq: vi.fn().mockReturnThis(), then: (resolve: (result: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
   mocks.from.mockImplementation((table: string) => {
     if (table === "leads") return {
       select: vi.fn().mockReturnValue(leadRead),
       update: vi.fn().mockReturnValue(leadSave),
     };
     if (table === "profiles") return { select: vi.fn().mockReturnValue(profileRead) };
+    if (table === "entity_tags") return { select: vi.fn().mockReturnValue(entityTagsRead) };
     return { insert: mocks.activityInsert };
   });
   mocks.rpc.mockResolvedValue({ data: [{ user_id: oldOwnerId }, { user_id: newOwnerId }], error: null });

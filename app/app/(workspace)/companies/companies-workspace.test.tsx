@@ -31,18 +31,22 @@ vi.mock("./saved-view-actions", () => ({
   deleteCompanyViewAction: mocks.deleteCompanyViewAction,
 }));
 
+const workspaceTags = [{ id: "tag-1", name: "Strategic", color_token: null }];
+
 const workspaceProps = {
   companies: [],
   matchedCount: 0,
   totalCount: 0,
   owners: [],
+  tags: workspaceTags,
   search: "",
   ownerId: "",
+  tagId: "",
   sort: "name_asc" as const,
   page: 1,
   savedViews: [{ id: "83d8aaf1-c78e-41db-ae18-493f44c84b42", name: "Named view", filters: { q: "Acme", ownerId: "" }, sort: "industry_desc" as const, visibleColumns: ["company", "owner"] as ("company" | "owner")[] }],
   activeViewId: "",
-  visibleColumns: ["company", "industry", "contacts", "open_deals", "pipeline_value", "owner", "last_activity", "next_activity"] as ("company" | "industry" | "contacts" | "open_deals" | "pipeline_value" | "owner" | "last_activity" | "next_activity")[],
+  visibleColumns: ["company", "industry", "contacts", "open_deals", "pipeline_value", "owner", "last_activity", "next_activity", "tags"] as ("company" | "industry" | "contacts" | "open_deals" | "pipeline_value" | "owner" | "last_activity" | "next_activity" | "tags")[],
   canCreate: true,
   createIntent: false,
   canImport: false,
@@ -81,11 +85,12 @@ describe("CompaniesWorkspace create form", () => {
 });
 
 describe("CompaniesWorkspace saved views", () => {
-  it("defaults to all eight company data columns and keeps an actions column", () => {
+  it("defaults to all nine company data columns and keeps an actions column", () => {
     render(<CompaniesWorkspace {...workspaceProps} />);
     const table = screen.getByRole("table");
-    expect(within(table).getAllByRole("columnheader")).toHaveLength(9);
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(10);
     expect(within(table).getByRole("columnheader", { name: "Next Activity" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Tags" })).toBeInTheDocument();
     expect(within(table).getByRole("columnheader", { name: "Actions" })).toBeInTheDocument();
   });
 
@@ -96,7 +101,7 @@ describe("CompaniesWorkspace saved views", () => {
       employee_size: null, phone: null, address_line_1: null, address_line_2: null, city: null, state: null, postal_code: null,
       country: null, description: null, owner_id: "user-1", created_at: "2026-04-01T12:00:00.000Z",
       updated_at: "2026-04-01T12:00:00.000Z", archived_at: null, ownerLabel: "Mina", contactsCount: 2,
-      openDealsCount: 1, openPipelineValue: 1500, currency: "USD", lastActivity: null, nextActivity: null,
+      openDealsCount: 1, openPipelineValue: 1500, currency: "USD", lastActivity: null, nextActivity: null, tags: [],
     };
     render(<CompaniesWorkspace {...workspaceProps} companies={[company]} matchedCount={1} totalCount={1} visibleColumns={["company"]} />);
 
@@ -118,9 +123,10 @@ const companyNote = { id: "note-1", body: "Renewal discussion", is_pinned: true,
 const companyDetail = {
   company: { id: "company-1", workspace_id: "workspace-1", name: "Acme Group", website: null, industry: null, employee_size: null, phone: null, address_line_1: null, address_line_2: null, city: null, state: null, postal_code: null, country: null, description: null, owner_id: "user-1", created_at: "2026-04-01T12:00:00.000Z", updated_at: "2026-04-01T12:00:00.000Z", archived_at: null },
   ownerLabel: "Mina",
+  tags: [],
   contacts: [], deals: [], activities: [], tasks: [], notes: [companyNote], attachments: [],
 };
-const companyNoteProps = { detail: companyDetail, owners: [], section: "notes", canEdit: true, canEditAll: false, canReassign: false, canArchive: false, currentUserId: "user-1" };
+const companyNoteProps = { detail: companyDetail, owners: [], tags: workspaceTags, section: "notes", canEdit: true, canEditAll: false, canReassign: false, canArchive: false, currentUserId: "user-1" };
 
 describe("CompanyDetailWorkspace owner editing", () => {
   it("offers the retained inactive owner as the selected option", () => {

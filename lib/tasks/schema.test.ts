@@ -15,6 +15,11 @@ describe("task query parsing", () => {
     expect(cancelledTasks.view).toBe("cancelled");
     expect(restrictAllTasksView(cancelledTasks)).toEqual(cancelledTasks);
   });
+  it("accepts the tomorrow view and leaves it unrestricted for every role", () => {
+    const tomorrowTasks = parseTaskSearchParams({ view: "tomorrow" });
+    expect(tomorrowTasks.view).toBe("tomorrow");
+    expect(restrictAllTasksView(tomorrowTasks)).toEqual(tomorrowTasks);
+  });
   it("falls back safely for invalid and repeated query parameters", () => {
     expect(parseTaskSearchParams({ view: "today", page: "0" })).toEqual({ view: "my", q: "", priority: "all", type: "all", sort: "due_date", timezoneOffset: 0, tomorrowTimezoneOffset: 0, weekStartTimezoneOffset: 0, nextWeekTimezoneOffset: 0, timeZone: "UTC", page: 1 });
     expect(parseTaskSearchParams({ view: ["today", "completed"], q: ["x"] }).view).toBe("my");
@@ -35,7 +40,7 @@ describe("task query parsing", () => {
   });
   it("calculates user-local day boundaries across a daylight-saving offset change", () => {
     const now = new Date("2026-03-08T12:00:00.000Z");
-    expect(taskDateBounds(now, 300, 240)).toEqual({ start: new Date("2026-03-08T05:00:00.000Z"), tomorrow: new Date("2026-03-09T04:00:00.000Z") });
+    expect(taskDateBounds(now, 300, 240)).toEqual({ start: new Date("2026-03-08T05:00:00.000Z"), tomorrow: new Date("2026-03-09T04:00:00.000Z"), dayAfterTomorrow: new Date("2026-03-10T04:00:00.000Z") });
   });
   it.each([
     { label: "week containing a daylight-saving transition", now: "2026-03-04T12:00:00.000Z", offset: 300, weekStartOffset: 300, nextWeekOffset: 240, start: "2026-03-02T05:00:00.000Z", end: "2026-03-09T04:00:00.000Z" },

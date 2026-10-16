@@ -2,6 +2,7 @@ import { hasWorkspacePermission } from "@/lib/auth/permissions";
 import { requirePermission } from "@/lib/auth/authorize";
 import { listContactSavedViews, listWorkspaceContacts } from "@/lib/contacts/repository";
 import { applyContactSavedView, contactSavedViewIdSchema, contactViewColumns, parseContactSearchParams } from "@/lib/contacts/schema";
+import { listWorkspaceTags } from "@/lib/tags/entity-tags";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { ContactsWorkspace } from "./contacts-workspace";
 
@@ -17,7 +18,10 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
   const activeView = requestedView.success ? savedViews.find((view) => view.id === requestedView.data) : undefined;
   const activeParams = activeView ? applyContactSavedView(params, activeView) : params;
   const visibleColumns = activeView?.visibleColumns ?? [...contactViewColumns];
-  const contactsPage = await listWorkspaceContacts(supabase, context.workspaceId, context.userId, context.fullName, activeParams);
+  const [contactsPage, tags] = await Promise.all([
+    listWorkspaceContacts(supabase, context.workspaceId, context.userId, context.fullName, activeParams),
+    listWorkspaceTags(supabase, context.workspaceId),
+  ]);
   return <ContactsWorkspace
       activeCount={contactsPage.activeCount}
       canCreate={canCreate}
@@ -36,6 +40,8 @@ export default async function ContactsPage({ searchParams }: { searchParams: Pro
       lifecycle={activeParams.lifecycle}
       matchedCount={contactsPage.matchedCount}
       ownerId={activeParams.ownerId}
+      tagId={activeParams.tagId}
+      tags={tags}
       owners={contactsPage.owners}
       page={activeParams.page}
       search={activeParams.q}

@@ -29,12 +29,13 @@ type LeadFormProps = {
   lead?: LeadRow;
   sources: LeadSource[];
   owners: LeadOwner[];
+  tags: LeadTag[];
   currency: string;
   canReassign: boolean;
   onClose: () => void;
 };
 
-function LeadForm({ lead, sources, owners, currency, canReassign, onClose }: LeadFormProps) {
+function LeadForm({ lead, sources, owners, tags, currency, canReassign, onClose }: LeadFormProps) {
   const router = useRouter();
   const dialogRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -109,6 +110,7 @@ function LeadForm({ lead, sources, owners, currency, canReassign, onClose }: Lea
             {canReassign ? <label className="leads-field"><span>Owner</span><select defaultValue={lead?.owner_id ?? ""} name="ownerId"><option value="">Unassigned</option>{lead?.owner_id && needsRetainedRelationOption(lead.owner_id, owners.map((owner) => owner.id)) && <option value={lead.owner_id}>Current owner · Inactive user</option>}{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select>{errors.ownerId?.[0] && <small>{errors.ownerId[0]}</small>}</label> : <input name="ownerId" type="hidden" value={lead?.owner_id ?? ""} />}
           </div>
           <label className="leads-field"><span>Notes <em>Optional</em></span><textarea defaultValue={lead?.notes_summary ?? ""} name="notesSummary" rows={3} />{errors.notesSummary?.[0] && <small>{errors.notesSummary[0]}</small>}</label>
+          <fieldset className="leads-field"><legend>Tags</legend>{tags.length ? tags.map((tag) => <label key={tag.id}><input defaultChecked={lead?.tags?.some(({ id }) => id === tag.id)} name="tagIds" type="checkbox" value={tag.id} /> {tag.name}</label>) : <span>No workspace tags available.</span>}{errors.tagIds?.[0] && <small>{errors.tagIds[0]}</small>}</fieldset>
           {!lead && state.duplicateMatches?.length ? <>
             <input name="confirmDuplicate" type="hidden" value="true" />
             <div aria-live="polite" className="csv-import-warning" role="status">
@@ -302,7 +304,7 @@ export function LeadWorkspace({
       {leads.length === 0 && <div className="leads-empty"><h2>{hasFilters ? "No matching leads" : "No leads yet"}</h2><p>{hasFilters ? "Try changing or clearing your filters." : "Leads you add to this workspace will appear here."}</p>{canCreate && !hasFilters && <button className="leads-secondary-button" onClick={() => setFormLead(null)} type="button">Add your first lead</button>}</div>}
       <nav aria-label="Leads pages" className="leads-pagination"><span>{matchedCount === 0 ? "0 records" : `${(page - 1) * 25 + 1}–${Math.min(page * 25, matchedCount)} of ${matchedCount} records`}</span><div><a aria-disabled={page <= 1} className={page <= 1 ? "is-disabled" : ""} href={page <= 1 ? undefined : pageHref({ page: page - 1, q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, sort, viewId: activeViewId, createdFrom, createdTo })}>Previous</a><span>Page {page} of {pageCount}</span><a aria-disabled={page >= pageCount} className={page >= pageCount ? "is-disabled" : ""} href={page >= pageCount ? undefined : pageHref({ page: page + 1, q: search, status: statusFilter, source: sourceFilter, owner: ownerFilter, tagId: tagFilter, sort, viewId: activeViewId, createdFrom, createdTo })}>Next</a></div></nav>
     </section>
-    {formLead !== undefined && <LeadForm canReassign={canReassign} currency={currency} lead={formLead ?? undefined} onClose={() => setFormLead(undefined)} owners={owners} sources={sources} />}
+    {formLead !== undefined && <LeadForm canReassign={canReassign} currency={currency} lead={formLead ?? undefined} onClose={() => setFormLead(undefined)} owners={owners} sources={sources} tags={tags} />}
     {conversionLead && <LeadConversionDialog currency={currency} lead={conversionLead} onClose={() => setConversionLead(null)} options={conversionOptions} owners={owners} currentUserId={currentUserId} />}
     {archiveLead && <ArchiveLeadConfirmation action={archiveAction} lead={archiveLead} onClose={() => setArchiveLead(null)} pending={archiving} state={archiveState} />}
   </main>;

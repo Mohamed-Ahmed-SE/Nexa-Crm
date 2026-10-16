@@ -10,10 +10,14 @@ import { isValidCompanyUploadContent, validateCompanyUploadMetadata } from "@/li
 import { normalizeContactDateTime } from "@/lib/contacts/date-time";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { activityModificationError, deleteManualActivity, updateManualActivity, type ActivityTarget, type ActivityVerb } from "@/lib/activities/modify";
+import { replaceEntityTags, verifyWorkspaceTagIds } from "@/lib/tags/entity-tags";
 
-export type CompanyActionState = { ok?: boolean; message?: string; fieldErrors?: Record<string, string[]>; duplicateMatches?: CompanyDuplicateCandidate[] };
+export type CompanyActionState = { ok?: boolean; message?: string; fieldErrors?: Record<string, string[]>; duplicateMatches?: CompanyDuplicateCandidate[]; tagWarning?: boolean };
 const value = (form: FormData, key: string) => { const item = form.get(key); return typeof item === "string" ? item : ""; };
-const parseInput = (form: FormData) => companyInputSchema.safeParse(Object.fromEntries(["name", "website", "industry", "employeeSize", "phone", "addressLine1", "addressLine2", "city", "state", "postalCode", "country", "description", "ownerId"].map((key) => [key, value(form, key)])));
+const parseInput = (form: FormData) => companyInputSchema.safeParse({
+  ...Object.fromEntries(["name", "website", "industry", "employeeSize", "phone", "addressLine1", "addressLine2", "city", "state", "postalCode", "country", "description", "ownerId"].map((key) => [key, value(form, key)])),
+  tagIds: form.getAll("tagIds"),
+});
 const companyFields = (input: CompanyInput, ownerId = input.ownerId) => ({
   name: input.name, website: input.website, industry: input.industry, employee_size: input.employeeSize,
   phone: input.phone, address_line_1: input.addressLine1, address_line_2: input.addressLine2,
@@ -44,6 +48,7 @@ export async function createCompanyAction(_previous: CompanyActionState, form: F
   if (!parsed.success) return { message: "Check the highlighted fields.", fieldErrors: parsed.error.flatten().fieldErrors };
   const supabase = await createSupabaseServerClient();
   if (!supabase) return { message: "Authentication is not configured." };
+  if (!await verifyWorkspaceTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return { message: "Choose tags from this workspace." };
   const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
   const ownerId = canReassign ? parsed.data.ownerId : context.userId;
   if (parsed.data.ownerId && !canReassign) return { message: "You cannot assign this company to another member." };
@@ -57,8 +62,10 @@ export async function createCompanyAction(_previous: CompanyActionState, form: F
     workspace_id: context.workspaceId, created_by: context.userId, ...companyFields(parsed.data, ownerId),
   }).select("id").maybeSingle();
   if (error || !createdCompany?.id) return { message: "Unable to create this company." };
+  const tagsSaved = !parsed.data.tagIds.length || await replaceEntityTags(supabase, context.workspaceId, "company", createdCompany.id, parsed.data.tagIds);
   revalidatePath("/app/companies");
   const logged = await logCompanyCreation(supabase, context.workspaceId, context.userId, createdCompany.id);
+  if (!tagsSaved) return { ok: true, message: "Company added, but its tags could not be saved. Edit the company to try again.", tagWarning: true };
   return logged
     ? { ok: true }
     : { ok: true, message: "Company added, but its activity could not be recorded." };
@@ -90,11 +97,13 @@ export async function updateCompanyAction(_previous: CompanyActionState, form: F
   const access = await companyAccess(id.data);
   if (!access.supabase || !access.company) return { message: access.message ?? "Unable to update company." };
   const { context, supabase, company } = access;
+  if (!await verifyWorkspaceTagIds(supabase, context.workspaceId, parsed.data.tagIds)) return { message: "Choose tags from this workspace." };
   const canReassign = hasWorkspacePermission(context.role, "crm.reassign");
   if (!canReassign && parsed.data.ownerId !== company.owner_id) return { message: "You cannot change company ownership." };
   if (parsed.data.ownerId !== company.owner_id && !await verifyOwner(supabase, context.workspaceId, parsed.data.ownerId)) return { message: "Choose a member of this workspace." };
   const { error } = await supabase.from("companies").update(companyFields(parsed.data)).eq("workspace_id", context.workspaceId).eq("id", id.data);
   if (error) return { message: "Unable to update this company." };
+  const tagsSaved = await replaceEntityTags(supabase, context.workspaceId, "company", id.data, parsed.data.tagIds);
   revalidatePath("/app/companies");
   revalidatePath(`/app/companies/${id.data}`);
   if (company.owner_id !== parsed.data.ownerId) {
@@ -104,6 +113,7 @@ export async function updateCompanyAction(_previous: CompanyActionState, form: F
     });
     if (!logged) return { ok: true, message: "Company updated, but its owner-change activity could not be recorded." };
   }
+  if (!tagsSaved) return { ok: true, message: "Company details were updated, but tags could not be saved. Existing tags were retained where possible.", tagWarning: true };
   return { ok: true };
 }
 

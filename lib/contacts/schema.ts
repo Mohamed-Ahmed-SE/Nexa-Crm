@@ -24,6 +24,7 @@ export const contactInputSchema = z.object({
   ownerId: optionalUuid,
   lifecycleStatus: z.enum(contactLifecycleStatuses),
   linkedinUrl: z.union([z.string().trim().url().max(2048).refine((linkedinUrl) => isHttpsUrl(linkedinUrl), "Enter an HTTPS URL."), z.literal("")]).optional().transform((linkedinUrl) => linkedinUrl || null),
+  tagIds: z.array(z.string().uuid("Choose valid tags.")).max(100, "Choose no more than 100 tags.").refine((tagIds) => new Set(tagIds).size === tagIds.length, "Each tag can be selected only once.").default([]),
 });
 export type ContactInput = z.infer<typeof contactInputSchema>;
 
@@ -81,11 +82,12 @@ const searchParamsSchema = z.object({
   lifecycle: z.enum(["all", ...contactLifecycleStatuses]).default("all"),
   company: z.union([z.string().uuid(), z.literal("")]).default(""),
   owner: z.union([z.string().uuid(), z.literal(""), z.literal("unassigned")]).default(""),
+  tagId: z.union([z.string().uuid(), z.literal("")]).default(""),
   sort: z.enum(contactViewSorts).default("updated_desc"),
   page: z.coerce.number().int().min(1).max(10000).default(1),
 });
 
-export type ContactSearchParams = { q: string; lifecycle: ContactLifecycleStatus | "all"; companyId: string; ownerId: string; sort: ContactViewSort; page: number };
+export type ContactSearchParams = { q: string; lifecycle: ContactLifecycleStatus | "all"; companyId: string; ownerId: string; tagId: string; sort: ContactViewSort; page: number };
 
 export function parseContactSearchParams(input: Record<string, string | string[] | undefined>): ContactSearchParams {
   const searchParams = searchParamsSchema.safeParse({
@@ -93,11 +95,12 @@ export function parseContactSearchParams(input: Record<string, string | string[]
     lifecycle: typeof input.lifecycle === "string" ? input.lifecycle : "all",
     company: typeof input.company === "string" ? input.company : "",
     owner: typeof input.owner === "string" ? input.owner : "",
+    tagId: typeof input.tagId === "string" ? input.tagId : "",
     sort: typeof input.sort === "string" ? input.sort : "updated_desc",
     page: typeof input.page === "string" ? input.page : "1",
   });
-  if (!searchParams.success) return { q: "", lifecycle: "all", companyId: "", ownerId: "", sort: "updated_desc", page: 1 };
-  return { q: searchParams.data.q, lifecycle: searchParams.data.lifecycle, companyId: searchParams.data.company, ownerId: searchParams.data.owner, sort: searchParams.data.sort, page: searchParams.data.page };
+  if (!searchParams.success) return { q: "", lifecycle: "all", companyId: "", ownerId: "", tagId: "", sort: "updated_desc", page: 1 };
+  return { q: searchParams.data.q, lifecycle: searchParams.data.lifecycle, companyId: searchParams.data.company, ownerId: searchParams.data.owner, tagId: searchParams.data.tagId, sort: searchParams.data.sort, page: searchParams.data.page };
 }
 
 export function escapeContactSearchTerm(query: string): string {

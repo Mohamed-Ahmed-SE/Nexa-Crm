@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { applyCompanySavedView, buildCompanySearchFilter, companyInputSchema, companySavedViewSchema, companySortOrder, findCompanySavedView, parseCompanySearchParams, parsePersistedCompanyView, type CompanySavedViewInput } from "@/lib/companies/schema";
 
 const ownerId = "83d8aaf1-c78e-41db-ae18-493f44c84b42";
+const otherTagId = "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2";
 
 describe("company input", () => {
   it.each([
-    { scenario: "blank optional fields", input: { name: " Acme ", website: "", industry: "", employeeSize: "", ownerId: "" }, expected: { name: "Acme", website: null, industry: null, employeeSize: null, ownerId: null, phone: null } },
+    { scenario: "blank optional fields", input: { name: " Acme ", website: "", industry: "", employeeSize: "", ownerId: "" }, expected: { name: "Acme", website: null, industry: null, employeeSize: null, ownerId: null, phone: null, tagIds: [] } },
     { scenario: "employee count and owner", input: { name: "Acme", employeeSize: "42", ownerId }, expected: { employeeSize: 42, ownerId } },
   ])("normalizes $scenario", ({ input, expected }) => {
     expect(companyInputSchema.parse(input)).toMatchObject(expected);
@@ -18,14 +19,26 @@ describe("company input", () => {
   ])("rejects %s", (_scenario, input) => {
     expect(companyInputSchema.safeParse(input).success).toBe(false);
   });
+
+  it("accepts a unique list of UUID tag IDs and rejects malformed or repeated IDs", () => {
+    const base = { name: "Acme" };
+    expect(companyInputSchema.safeParse({ ...base, tagIds: [ownerId, otherTagId] }).success).toBe(true);
+    expect(companyInputSchema.safeParse({ ...base, tagIds: ["not-a-uuid"] }).success).toBe(false);
+    expect(companyInputSchema.safeParse({ ...base, tagIds: [ownerId, ownerId] }).success).toBe(false);
+  });
 });
 
 describe("company list query", () => {
   it.each([
-    { scenario: "valid search parameters", input: { q: " Acme ", owner: ownerId, sort: "industry_desc", page: "4" }, expected: { q: "Acme", ownerId, sort: "industry_desc", page: 4 } },
-    { scenario: "invalid parameter groups", input: { q: "x".repeat(101), owner: "forged", sort: "secret", page: "0" }, expected: { q: "", ownerId: "", sort: "name_asc", page: 1 } },
+    { scenario: "valid search parameters", input: { q: " Acme ", owner: ownerId, sort: "industry_desc", page: "4" }, expected: { q: "Acme", ownerId, tagId: "", sort: "industry_desc", page: 4 } },
+    { scenario: "invalid parameter groups", input: { q: "x".repeat(101), owner: "forged", sort: "secret", page: "0" }, expected: { q: "", ownerId: "", tagId: "", sort: "name_asc", page: 1 } },
   ])("parses $scenario", ({ input, expected }) => {
     expect(parseCompanySearchParams(input)).toEqual(expected);
+  });
+
+  it("accepts a valid tag filter and discards a malformed one", () => {
+    expect(parseCompanySearchParams({ tagId: ownerId })).toMatchObject({ tagId: ownerId });
+    expect(parseCompanySearchParams({ tagId: "not-a-uuid" })).toMatchObject({ tagId: "" });
   });
 
   it.each([
@@ -40,8 +53,8 @@ describe("company saved views", () => {
   const view: CompanySavedViewInput = { name: "Accounts", filters: { q: "Acme", ownerId }, sort: "industry_desc", visibleColumns: ["company", "owner"] };
 
   it("applies the saved company filters and sort while preserving pagination", () => {
-    expect(applyCompanySavedView({ q: "URL", ownerId: "", sort: "name_asc", page: 3 }, view)).toEqual({
-      q: "Acme", ownerId, sort: "industry_desc", page: 3,
+    expect(applyCompanySavedView({ q: "URL", ownerId: "", tagId: "", sort: "name_asc", page: 3 }, view)).toEqual({
+      q: "Acme", ownerId, tagId: "", sort: "industry_desc", page: 3,
     });
   });
 

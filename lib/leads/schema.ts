@@ -21,6 +21,7 @@ export const leadInputSchema = z.object({
   ownerId: optionalUuid,
   estimatedValue: z.coerce.number().finite().min(0).max(999999999999.99),
   notesSummary: optionalText(2000),
+  tagIds: z.array(z.string().uuid("Choose valid tags.")).max(100, "Choose no more than 100 tags.").refine((tagIds) => new Set(tagIds).size === tagIds.length, "Each tag can be selected only once.").default([]),
 });
 export type LeadInput = z.infer<typeof leadInputSchema>;
 

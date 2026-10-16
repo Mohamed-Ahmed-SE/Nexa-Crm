@@ -65,11 +65,13 @@ function setupActions({
     if (activity.activity_type !== activityErrorType) activities.push(activity);
     return { error: activity.activity_type === activityErrorType ? new Error("activity insert failed") : null };
   });
+  const entityTagsRead = { eq: vi.fn().mockReturnThis(), then: (resolve: (result: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
   mocks.from.mockImplementation((table: string) => {
     if (table === "leads") return {
       select: vi.fn().mockReturnValue(currentQuery), update: vi.fn().mockReturnValue(updateQuery),
     };
     if (table === "profiles") return { select: vi.fn().mockReturnValue(profileQuery) };
+    if (table === "entity_tags") return { select: vi.fn().mockReturnValue(entityTagsRead) };
     return { insert: mocks.activityInsert };
   });
   mocks.rpc.mockImplementation(async (name: string) => {

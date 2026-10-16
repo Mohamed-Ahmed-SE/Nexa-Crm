@@ -57,10 +57,13 @@ const contactWithoutContext: ContactListRow = {
   tags: [],
 };
 
+const workspaceTags = [{ id: "tag-1", name: "Strategic", color_token: null }, { id: "tag-2", name: "Product", color_token: null }];
+
 const workspaceProps = {
   contacts: [populatedContact, contactWithoutContext],
   companies: [],
   owners: [],
+  tags: workspaceTags,
   canCreate: false,
   canImport: false,
   canExport: false,
@@ -74,6 +77,7 @@ const workspaceProps = {
   lifecycle: "all",
   companyId: "",
   ownerId: "",
+  tagId: "",
   page: 1,
   matchedCount: 2,
   totalCount: 2,
@@ -121,7 +125,7 @@ describe("ContactsWorkspace list context", () => {
 const ownNote = { id: "note-1", body: "Follow up next week", is_pinned: true, created_by: "user-1", created_at: "2026-04-01T12:00:00.000Z", updated_at: "2026-04-01T12:00:00.000Z" };
 const detailProps = {
   contact: populatedContact, company: null, deals: [], activities: [], activityCount: 0, activityPage: 1, tasks: [], notes: [ownNote], attachments: [],
-  owners: [], companies: [], canEdit: true, canEditAll: false, currentUserId: "user-1", canReassign: false, view: "overview",
+  owners: [], companies: [], tags: workspaceTags, canEdit: true, canEditAll: false, currentUserId: "user-1", canReassign: false, view: "overview",
 };
 
 describe("Contact address form persistence", () => {

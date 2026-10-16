@@ -1,6 +1,7 @@
 import "server-only";
 
 import { inactiveOwnerLabel, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
+import { listEntityTags, listWorkspaceTags as listWorkspaceEntityTags } from "@/lib/tags/entity-tags";
 
 import type { LeadSearchParams } from "@/lib/leads/schema";
 import { buildLeadSearchFilter, leadPageSize } from "@/lib/leads/schema";
@@ -37,10 +38,7 @@ export type LeadDetail = {
 };
 
 export async function listWorkspaceLeadTags(supabase: Supabase, workspaceId: string): Promise<LeadTag[]> {
-  const { data, error } = await supabase.from("tags").select("id, name, color_token")
-    .eq("workspace_id", workspaceId).order("name");
-  if (error) throw new Error("Unable to load workspace tags.");
-  return data ?? [];
+  return listWorkspaceEntityTags(supabase, workspaceId);
 }
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof import("@/lib/supabase/server").createSupabaseServerClient>>>;
@@ -81,7 +79,7 @@ export async function getLeadDetail(supabase: Supabase, context: LeadDetailConte
   if (!leadResult.data) return null;
 
   const lead = leadResult.data as LeadRow;
-  const [source, ownerLabel, ownersResult, activitiesResult, tasksResult, notesResult] = await Promise.all([
+  const [source, ownerLabel, ownersResult, activitiesResult, tasksResult, notesResult, tagsByLead] = await Promise.all([
     getLeadSourceName(supabase, workspaceId, lead.source_id),
     getLeadOwnerLabel(supabase, { ...context, ownerId: lead.owner_id }),
     supabase.rpc("list_reassignable_workspace_members", {
@@ -96,12 +94,13 @@ export async function getLeadDetail(supabase: Supabase, context: LeadDetailConte
     supabase.from("notes").select("id, body, created_by, created_at, is_pinned")
       .eq("workspace_id", workspaceId).eq("related_entity_type", "lead").eq("related_entity_id", id)
       .order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(50),
+    listEntityTags(supabase, workspaceId, "lead", [id]),
   ]);
   if (ownersResult.error || activitiesResult.error || tasksResult.error || notesResult.error) {
     throw new Error("Unable to load this lead's engagement history.");
   }
   return {
-    lead, source, ownerLabel,
+    lead: { ...lead, tags: tagsByLead.get(id) ?? [] }, source, ownerLabel,
     owners: (ownersResult.data ?? []).map(({ user_id }: { user_id: string }) => ({
       id: user_id,
       label: user_id === context.userId ? context.fullName : `Workspace member · ${user_id.slice(0, 6)}`,

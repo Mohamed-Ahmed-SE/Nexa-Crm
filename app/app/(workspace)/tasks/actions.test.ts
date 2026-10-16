@@ -10,7 +10,7 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("@/lib/auth/authorize", () => ({ requirePermission: mocks.requirePermission }));
 vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: mocks.createSupabaseServerClient }));
 
-import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction } from "./actions";
+import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction, updateTaskAction } from "./actions";
 
 const workspaceId = "5a4302eb-742b-49cb-9f0d-bfc96e9474c3";
 const userId = "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2";
@@ -464,5 +464,172 @@ describe("create task action", () => {
     expect(result).toEqual({ message: "Choose an active related record in this workspace that you can access." });
     expect(state.insertedTasks).toEqual([]);
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+function updateTaskForm(overrides: Partial<Record<"title" | "description" | "type" | "priority" | "dueAt" | "timezoneOffset" | "assignedTo" | "relatedType" | "relatedId", string>> = {}) {
+  const form = new FormData();
+  const fields = {
+    title: "Revise the proposal", description: "Double-check pricing.", type: "follow_up", priority: "high",
+    dueAt: "2026-04-03T10:30", timezoneOffset: "420", assignedTo: userId, relatedType: "company", relatedId: companyId, ...overrides,
+  };
+  for (const [key, fieldValue] of Object.entries(fields)) if (fieldValue !== undefined) form.set(key, fieldValue);
+  return form;
+}
+
+function updateTaskDatabase({
+  task, companyOwnerId, activeMemberIds = [userId], taskWorkspaceId = workspaceId, persistedTaskStatus = task.status,
+}: {
+  task: Task; companyOwnerId: string | null; activeMemberIds?: string[]; taskWorkspaceId?: string; persistedTaskStatus?: string;
+}) {
+  const updates: Record<string, unknown>[] = [];
+  const from = (table: string) => {
+    let operation: "select" | "update" = "select";
+    let update: Partial<Task> = {};
+    const filters = new Map<string, unknown>();
+    const query = {
+      select: () => query,
+      update: (changes: Partial<Task>) => { operation = "update"; update = changes; updates.push(changes); return query; },
+      eq: (column: string, filterValue: unknown) => { filters.set(column, filterValue); return query; },
+      is: (column: string, filterValue: unknown) => { filters.set(column, filterValue); return query; },
+      maybeSingle: async () => {
+        if (table === "tasks" && operation === "update") {
+          if (persistedTaskStatus !== filters.get("status") || filters.get("workspace_id") !== taskWorkspaceId || filters.get("id") !== task.id) return { data: null, error: null };
+          Object.assign(task, update);
+          return { data: { id: task.id }, error: null };
+        }
+        if (table === "tasks") {
+          if (filters.get("workspace_id") !== taskWorkspaceId || filters.get("id") !== task.id) return { data: null, error: null };
+          return { data: task, error: null };
+        }
+        if (table === "companies" || table === "leads" || table === "contacts" || table === "deals") {
+          const requestedId = filters.get("id");
+          const requestedOwnerId = filters.get("owner_id");
+          if (requestedId !== companyId || filters.get("workspace_id") !== taskWorkspaceId) return { data: null, error: null };
+          if (requestedOwnerId !== undefined && requestedOwnerId !== companyOwnerId) return { data: null, error: null };
+          if (!companyOwnerId) return { data: null, error: null };
+          return { data: { id: companyId, owner_id: companyOwnerId, status: "active" }, error: null };
+        }
+        return { data: null, error: null };
+      },
+    };
+    return query;
+  };
+  const rpc = async (_fn: string, args: { target_user_id: string | null }) => ({
+    data: activeMemberIds.map((activeUserId) => ({ user_id: activeUserId })).filter((member) => member.user_id === args.target_user_id || args.target_user_id === null),
+    error: null,
+  });
+  return { database: { from, rpc }, task, updates };
+}
+
+describe("update task action", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requirePermission.mockResolvedValue({ workspaceId, userId, role: "member" });
+  });
+
+  it("updates every editable field for an assigned open task owned by the member", async () => {
+    const state = updateTaskDatabase({
+      task: { id: taskId, title: "Call about renewal", status: "open", assigned_to: userId, related_entity_type: "company", related_entity_id: companyId, completed_at: null, due_at: null },
+      companyOwnerId: userId,
+    });
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await updateTaskAction(taskId, {}, updateTaskForm());
+
+    expect(result).toEqual({ ok: true, message: "Task updated." });
+    expect(state.updates).toEqual([{
+      title: "Revise the proposal", description: "Double-check pricing.", task_type: "follow_up", priority: "high",
+      due_at: "2026-04-03T17:30:00.000Z", assigned_to: userId, related_entity_type: "company", related_entity_id: companyId,
+    }]);
+    expect(mocks.revalidatePath.mock.calls.map(([path]) => path)).toEqual(["/app/tasks", `/app/companies/${companyId}`]);
+  });
+
+  it("denies a member reassigning their task to another workspace member", async () => {
+    const state = updateTaskDatabase({
+      task: { id: taskId, title: "Call about renewal", status: "open", assigned_to: userId, related_entity_type: null, related_entity_id: null, completed_at: null },
+      companyOwnerId: null,
+    });
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await updateTaskAction(taskId, {}, updateTaskForm({ assignedTo: otherUserId, relatedType: "", relatedId: "" }));
+
+    expect(result).toEqual({ message: "You can assign tasks only to yourself." });
+    expect(state.updates).toEqual([]);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("denies a viewer from updating a task", async () => {
+    // requirePermission enforces the crm.edit.own denial via notFound(); simulate that boundary.
+    mocks.requirePermission.mockRejectedValueOnce(new Error("NEXT_NOT_FOUND"));
+
+    await expect(updateTaskAction(taskId, {}, updateTaskForm())).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
+  });
+
+  it("rejects editing a task that is not open", async () => {
+    const state = updateTaskDatabase({
+      task: { id: taskId, title: "Call about renewal", status: "completed", assigned_to: userId, related_entity_type: null, related_entity_id: null, completed_at: "2026-04-02T10:00:00.000Z" },
+      companyOwnerId: null,
+    });
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await updateTaskAction(taskId, {}, updateTaskForm({ relatedType: "", relatedId: "" }));
+
+    expect(result).toEqual({ message: "This open task could not be found in your workspace." });
+    expect(state.updates).toEqual([]);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("denies an invalid assignee that is not an active workspace member for a manager", async () => {
+    mocks.requirePermission.mockResolvedValue({ workspaceId, userId, role: "manager" });
+    const state = updateTaskDatabase({
+      task: { id: taskId, title: "Call about renewal", status: "open", assigned_to: userId, related_entity_type: null, related_entity_id: null, completed_at: null },
+      companyOwnerId: null,
+      activeMemberIds: [],
+    });
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await updateTaskAction(taskId, {}, updateTaskForm({ assignedTo: otherUserId, relatedType: "", relatedId: "" }));
+
+    expect(result).toEqual({ message: "Choose an active member of this workspace." });
+    expect(state.updates).toEqual([]);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("denies a related record the member cannot access", async () => {
+    const state = updateTaskDatabase({
+      task: { id: taskId, title: "Call about renewal", status: "open", assigned_to: userId, related_entity_type: null, related_entity_id: null, completed_at: null },
+      companyOwnerId: otherUserId,
+    });
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await updateTaskAction(taskId, {}, updateTaskForm());
+
+    expect(result).toEqual({ message: "Choose an active related record in this workspace that you can access." });
+    expect(state.updates).toEqual([]);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("denies editing a task assigned to another user without a linked record the member owns", async () => {
+    const state = updateTaskDatabase({
+      task: { id: taskId, title: "Call about renewal", status: "open", assigned_to: otherUserId, related_entity_type: null, related_entity_id: null, completed_at: null },
+      companyOwnerId: null,
+    });
+    mocks.createSupabaseServerClient.mockResolvedValue(state.database);
+
+    const result = await updateTaskAction(taskId, {}, updateTaskForm({ assignedTo: "", relatedType: "", relatedId: "" }));
+
+    expect(result).toEqual({ message: "You can edit only tasks assigned to you or linked to a record you own." });
+    expect(state.updates).toEqual([]);
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed task ID before authorization or database access", async () => {
+    const result = await updateTaskAction("not-a-uuid", {}, updateTaskForm());
+
+    expect(result).toEqual({ message: "This task could not be identified." });
+    expect(mocks.requirePermission).not.toHaveBeenCalled();
+    expect(mocks.createSupabaseServerClient).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Building2, ContactRound, FilePlus2, Handshake, ListTodo, Search, StickyNote, UserRound, X } from "lucide-react";
 import { globalSearchAction } from "@/lib/search/actions";
@@ -40,10 +40,19 @@ export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const requestIdRef = useRef(0);
+  const resultRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+
+  const flatResults = useMemo(() => groups.flatMap(({ key }) => results[key]), [results]);
+
+  useEffect(() => {
+    setActiveIndex(-1);
+    resultRefs.current = [];
+  }, [results]);
 
   const show = useCallback(() => {
     returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -112,10 +121,46 @@ export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
     return () => window.clearTimeout(timer);
   }, [open, query]);
 
+  function moveActiveIndex(nextIndex: number) {
+    setActiveIndex(nextIndex);
+    resultRefs.current[nextIndex]?.scrollIntoView?.({ block: "nearest" });
+  }
+
   function onDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
       close();
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      if (!flatResults.length) return;
+      event.preventDefault();
+      moveActiveIndex(activeIndex < flatResults.length - 1 ? activeIndex + 1 : 0);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      if (!flatResults.length) return;
+      event.preventDefault();
+      moveActiveIndex(activeIndex > 0 ? activeIndex - 1 : flatResults.length - 1);
+      return;
+    }
+    if (event.key === "Home") {
+      if (!flatResults.length) return;
+      event.preventDefault();
+      moveActiveIndex(0);
+      return;
+    }
+    if (event.key === "End") {
+      if (!flatResults.length) return;
+      event.preventDefault();
+      moveActiveIndex(flatResults.length - 1);
+      return;
+    }
+    if (event.key === "Enter") {
+      if (activeIndex < 0 || activeIndex >= flatResults.length) return;
+      if (document.activeElement !== inputRef.current) return;
+      event.preventDefault();
+      resultRefs.current[activeIndex]?.click();
       return;
     }
     if (event.key !== "Tab" || !dialogRef.current) return;
@@ -143,17 +188,20 @@ export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
         <h2 className="sr-only" id="global-search-title">Search this workspace</h2>
         <div className="global-search-input-row">
           <Search aria-hidden="true" size={19} />
-          <input aria-label="Search this workspace" autoComplete="off" onChange={(event) => setQuery(event.target.value)} placeholder="Search leads, contacts, companies, and deals…" ref={inputRef} type="search" value={query} />
+          <input aria-activedescendant={activeIndex >= 0 ? `global-search-result-${flatResults[activeIndex]?.id}` : undefined} aria-controls="global-search-listbox" aria-label="Search this workspace" autoComplete="off" onChange={(event) => setQuery(event.target.value)} placeholder="Search leads, contacts, companies, and deals…" ref={inputRef} type="search" value={query} />
           <button aria-label="Close search" className="global-search-close" onClick={close} type="button"><X aria-hidden="true" size={18} /></button>
         </div>
-        <div aria-busy={loading} aria-live="polite" className="global-search-content">
+        <div aria-busy={loading} aria-live="polite" className="global-search-content" id="global-search-listbox" role="listbox">
           {loading && <p className="global-search-status">Searching this workspace…</p>}
           {!loading && error && <p className="global-search-status global-search-error" role="alert">{error}</p>}
           {!loading && !error && !query.trim() && <p className="global-search-status">Type a name, title, company, or deal to search.</p>}
           {!loading && !error && query.trim() && hasSearched && totalResults === 0 && <p className="global-search-status">No matching records found.</p>}
           {!loading && !error && groups.map(({ key, label, icon: Icon }) => results[key].length ? <section aria-label={label} className="global-search-group" key={key}>
             <h3><Icon aria-hidden="true" size={14} />{label}</h3>
-            <ul>{results[key].map((item) => <Result key={item.id} item={item} onSelect={close} />)}</ul>
+            <ul role="presentation">{results[key].map((item) => {
+              const index = flatResults.indexOf(item);
+              return <Result active={index === activeIndex} item={item} key={item.id} onSelect={close} ref={(node) => { resultRefs.current[index] = node; }} />;
+            })}</ul>
           </section> : null)}
         </div>
         {canCreate && <nav aria-label="Quick create" className="global-search-actions">
@@ -166,9 +214,11 @@ export function GlobalSearch({ canCreate }: { canCreate: boolean }) {
   </>;
 }
 
-function Result({ item, onSelect }: { item: GlobalSearchItem; onSelect: () => void }) {
-  return <li><Link className="global-search-result" href={item.href} onClick={onSelect}>
-    <span className="global-search-result-copy"><strong>{item.name}</strong><span>{item.context}</span></span>
-    <span className="global-search-result-type">{item.type}</span>
-  </Link></li>;
-}
+const Result = forwardRef<HTMLAnchorElement, { item: GlobalSearchItem; active: boolean; onSelect: () => void }>(
+  function Result({ item, active, onSelect }, ref) {
+    return <li aria-selected={active} id={`global-search-result-${item.id}`} role="option"><Link className={active ? "global-search-result global-search-result-active" : "global-search-result"} href={item.href} onClick={onSelect} ref={ref}>
+      <span className="global-search-result-copy"><strong>{item.name}</strong><span>{item.context}</span></span>
+      <span className="global-search-result-type">{item.type}</span>
+    </Link></li>;
+  },
+);

@@ -58,11 +58,13 @@ function setupUpdate({ ownerId = oldOwnerId, activityError = false, newOwnerLabe
     return companyWrite;
   });
   mocks.activityInsert.mockResolvedValue({ error: activityError ? { message: "activity insert failed" } : null });
+  const entityTagsRead = { eq: vi.fn().mockReturnThis(), then: (resolve: (result: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
   mocks.from.mockImplementation((table: string) => {
     if (table === "companies") return {
       select: vi.fn().mockReturnValue(companyRead), update: mocks.companyUpdate,
     };
     if (table === "profiles") return profiles;
+    if (table === "entity_tags") return { select: vi.fn().mockReturnValue(entityTagsRead) };
     return { insert: mocks.activityInsert };
   });
   mocks.createSupabaseServerClient.mockResolvedValue({

@@ -152,7 +152,7 @@ describe("lead detail notes", () => {
     const notes = [{ id: "note-1", body: "Pinned", created_by: "user-1", created_at: "2026-04-01T00:00:00Z", is_pinned: true }];
     const fromQuery = (table: string) => {
       const query: Record<string, unknown> = {};
-      for (const method of ["select", "eq", "is", "order", "limit"]) {
+      for (const method of ["select", "eq", "is", "in", "order", "limit"]) {
         query[method] = (...args: unknown[]) => {
           if (table === "notes" && method === "select") noteSelect = String(args[0]);
           if (table === "notes" && method === "order") noteOrders.push([String(args[0]), args[1]]);
@@ -180,7 +180,7 @@ describe("lead detail activity timeline", () => {
     const activityCalls: Array<[string, unknown[]]> = [];
     const fromQuery = (table: string) => {
       const query: Record<string, unknown> = {};
-      for (const method of ["select", "eq", "is", "order", "limit"]) {
+      for (const method of ["select", "eq", "is", "in", "order", "limit"]) {
         query[method] = (...args: unknown[]) => {
           if (table === "activities") activityCalls.push([method, args]);
           return query;

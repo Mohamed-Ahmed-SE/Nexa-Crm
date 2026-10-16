@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { formatTaskOwners } from "./owner-labels";
 import { countTaskCompletionSummary, listTaskCalendarRecords, listWorkspaceTasks } from "./repository";
-import { parseTaskSearchParams } from "./schema";
+import { parseTaskSearchParams, taskDateBounds } from "./schema";
 
 function createTaskQueryRecorder() {
   const calls: Array<[string, ...unknown[]]> = [];
@@ -112,5 +112,35 @@ describe("workspace task date filtering", () => {
     expect(calls).toContainEqual(["eq", "workspace_id", "workspace-1"]);
     expect(calls).not.toContainEqual(["eq", "assigned_to", "member-1"]);
     expect(calls).toContainEqual(["eq", "status", "open"]);
+  });
+
+  it("filters the tomorrow view to the user-local tomorrow window using the tomorrow timezone offset", async () => {
+    const now = new Date("2026-03-08T12:00:00.000Z");
+    const { supabase, calls } = createTaskQueryRecorder();
+    const params = parseTaskSearchParams({ view: "tomorrow", timezoneOffset: "300", tomorrowTimezoneOffset: "240" });
+    const { tomorrow, dayAfterTomorrow } = taskDateBounds(now, 300, 240);
+
+    await listWorkspaceTasks(supabase as never, { workspaceId: "workspace-1", userId: "member-1", params, canReassign: false, now });
+
+    expect(calls).toContainEqual(["eq", "status", "open"]);
+    expect(calls).toContainEqual(["gte", "due_at", tomorrow.toISOString()]);
+    expect(calls).toContainEqual(["lt", "due_at", dayAfterTomorrow.toISOString()]);
+    const { start: today } = taskDateBounds(now, 300, 240);
+    expect(calls).not.toContainEqual(["gte", "due_at", today.toISOString()]);
+  });
+
+  it("filters the tomorrow view in the calendar within the same window and assignee scope", async () => {
+    const now = new Date("2026-03-08T12:00:00.000Z");
+    const { supabase, calls } = createTaskQueryRecorder();
+    const params = parseTaskSearchParams({ view: "tomorrow", timezoneOffset: "300", tomorrowTimezoneOffset: "240" });
+    const { tomorrow, dayAfterTomorrow } = taskDateBounds(now, 300, 240);
+
+    await listTaskCalendarRecords(supabase as never, { workspaceId: "workspace-1", userId: "member-1", canReassign: false, params, calendarMonth: "2026-03", now });
+
+    expect(calls).toContainEqual(["eq", "workspace_id", "workspace-1"]);
+    expect(calls).toContainEqual(["eq", "assigned_to", "member-1"]);
+    expect(calls).toContainEqual(["eq", "status", "open"]);
+    expect(calls).toContainEqual(["gte", "due_at", tomorrow.toISOString()]);
+    expect(calls).toContainEqual(["lt", "due_at", dayAfterTomorrow.toISOString()]);
   });
 });

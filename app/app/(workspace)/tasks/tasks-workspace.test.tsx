@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction } from "./actions";
+import { cancelTaskAction, completeTaskAction, createTaskAction, reopenTaskAction, rescheduleTaskAction, updateTaskAction } from "./actions";
 import { TasksWorkspace } from "./tasks-workspace";
 import TasksError from "./error";
 import type { TaskRow } from "@/lib/tasks/repository";
@@ -9,7 +9,7 @@ import type { TaskSearchParams } from "@/lib/tasks/schema";
 
 const routerRefresh = vi.hoisted(() => vi.fn());
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: routerRefresh, replace: vi.fn() }) }));
-vi.mock("./actions", () => ({ cancelTaskAction: vi.fn(), completeTaskAction: vi.fn(), createTaskAction: vi.fn(), reopenTaskAction: vi.fn(), rescheduleTaskAction: vi.fn() }));
+vi.mock("./actions", () => ({ cancelTaskAction: vi.fn(), completeTaskAction: vi.fn(), createTaskAction: vi.fn(), reopenTaskAction: vi.fn(), rescheduleTaskAction: vi.fn(), updateTaskAction: vi.fn() }));
 
 const task: TaskRow = {
   id: "c2155412-d8a0-4792-b2bc-f6064b2798f4", title: "Send revised proposal", description: "Include the support scope.", task_type: "email",
@@ -370,5 +370,57 @@ describe("TasksWorkspace", () => {
       expect(control.tagName).not.toBe("A");
     }
     if (link) expect(within(pagination).getByRole("link", { name: link.label })).toHaveAttribute("href", link.href);
+  });
+
+  it("shows a Tomorrow tab alongside the other task views", () => {
+    render(<TasksWorkspace {...props} />);
+    const tomorrow = screen.getByRole("link", { name: "Tomorrow" });
+    expect(tomorrow).toHaveAttribute("href", "/app/tasks?view=tomorrow");
+
+    render(<TasksWorkspace {...props} params={{ ...props.params, view: "tomorrow" }} />);
+    expect(screen.getAllByRole("link", { name: "Tomorrow" }).at(-1)).toHaveAttribute("aria-current", "page");
+  });
+
+  it("opens the edit dialog prefilled with the task's current details and saves changes", async () => {
+    vi.mocked(updateTaskAction).mockResolvedValueOnce({ ok: true, message: "Task updated." });
+    const user = userEvent.setup();
+    render(<TasksWorkspace {...props} />);
+    const row = screen.getByRole("row", { name: /Send revised proposal/ });
+
+    await user.click(within(row).getByRole("button", { name: "Edit Send revised proposal" }));
+
+    expect(screen.getByRole("dialog", { name: "Edit task" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Task title" })).toHaveValue("Send revised proposal");
+    expect(screen.getByLabelText("Description")).toHaveValue("Include the support scope.");
+
+    await user.clear(screen.getByRole("textbox", { name: "Task title" }));
+    await user.type(screen.getByRole("textbox", { name: "Task title" }), "Send the final proposal");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Task updated.")).toBeInTheDocument();
+    expect(updateTaskAction).toHaveBeenCalledWith(task.id, {}, expect.any(FormData));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(routerRefresh).toHaveBeenCalled();
+  });
+
+  it("shows an edit error without closing the dialog and hides edit for completed tasks or non-editors", async () => {
+    vi.mocked(updateTaskAction).mockResolvedValueOnce({ message: "Task could not be updated. Refresh and try again." });
+    const user = userEvent.setup();
+    const { rerender } = render(<TasksWorkspace {...props} />);
+    const row = screen.getByRole("row", { name: /Send revised proposal/ });
+
+    await user.click(within(row).getByRole("button", { name: "Edit Send revised proposal" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Task could not be updated. Refresh and try again.");
+    expect(screen.getByRole("dialog", { name: "Edit task" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close edit task form" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    rerender(<TasksWorkspace {...props} tasks={[{ ...task, status: "completed" }]} />);
+    expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
+
+    rerender(<TasksWorkspace {...props} canEdit={false} tasks={[task]} />);
+    expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
   });
 });

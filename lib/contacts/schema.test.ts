@@ -2,13 +2,22 @@ import { describe, expect, it } from "vitest";
 import { buildContactSearchFilter, contactInputSchema, contactSavedViewSchema, contactSortOrder, parseContactSearchParams, parsePersistedContactView } from "@/lib/contacts/schema";
 
 const uuid = "83d8aaf1-c78e-41db-ae18-493f44c84b42";
+const otherUuid = "6d648c6b-8d8f-4a16-90c4-72f3c31c61a2";
 
 describe("contactInputSchema", () => {
   it("requires valid names and normalizes optional blanks", () => {
     expect(contactInputSchema.safeParse({ firstName: " ", lastName: "Chen", lifecycleStatus: "active" }).success).toBe(false);
     expect(contactInputSchema.parse({ firstName: " Sarah ", lastName: " Chen ", lifecycleStatus: "customer", email: "", companyId: "" })).toMatchObject({
-      firstName: "Sarah", lastName: "Chen", email: null, companyId: null, ownerId: null, phone: null, address: null,
+      firstName: "Sarah", lastName: "Chen", email: null, companyId: null, ownerId: null, phone: null, address: null, tagIds: [],
     });
+  });
+
+  it("accepts a unique list of UUID tag IDs and rejects malformed or repeated IDs", () => {
+    const base = { firstName: "A", lastName: "B", lifecycleStatus: "active" } as const;
+    expect(contactInputSchema.safeParse({ ...base, tagIds: [uuid, otherUuid] }).success).toBe(true);
+    expect(contactInputSchema.safeParse({ ...base, tagIds: ["not-a-uuid"] }).success).toBe(false);
+    expect(contactInputSchema.safeParse({ ...base, tagIds: [uuid, uuid] }).success).toBe(false);
+    expect(contactInputSchema.safeParse({ ...base, tagIds: Array(101).fill(uuid) }).success).toBe(false);
   });
 
   it("trims multiline addresses, normalizes blanks, and enforces the 500-character limit", () => {
@@ -29,11 +38,16 @@ describe("contactInputSchema", () => {
 describe("contact search filters", () => {
   it("accepts bounded filters and defaults invalid parameter groups", () => {
     expect(parseContactSearchParams({ q: " Chen ", lifecycle: "customer", company: uuid, owner: "unassigned", sort: "name_asc", page: "3" })).toEqual({
-      q: "Chen", lifecycle: "customer", companyId: uuid, ownerId: "unassigned", sort: "name_asc", page: 3,
+      q: "Chen", lifecycle: "customer", companyId: uuid, ownerId: "unassigned", tagId: "", sort: "name_asc", page: 3,
     });
     expect(parseContactSearchParams({ q: "x".repeat(101), lifecycle: "unknown", company: "other", owner: "other", page: "0" })).toEqual({
-      q: "", lifecycle: "all", companyId: "", ownerId: "", sort: "updated_desc", page: 1,
+      q: "", lifecycle: "all", companyId: "", ownerId: "", tagId: "", sort: "updated_desc", page: 1,
     });
+  });
+
+  it("accepts a valid tag filter and discards a malformed one", () => {
+    expect(parseContactSearchParams({ tagId: uuid })).toMatchObject({ tagId: uuid });
+    expect(parseContactSearchParams({ tagId: "not-a-uuid" })).toMatchObject({ tagId: "" });
   });
 
   it.each([

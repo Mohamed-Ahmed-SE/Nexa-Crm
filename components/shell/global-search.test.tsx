@@ -126,4 +126,81 @@ describe("GlobalSearch", () => {
     fireEvent.keyDown(field, { key: "/" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+
+  it("navigates to the second result with ArrowDown then Enter", async () => {
+    const user = userEvent.setup();
+    render(<GlobalSearch canCreate={false} />);
+    await user.click(screen.getByRole("button", { name: /Search CRM/ }));
+    const input = screen.getByRole("searchbox", { name: "Search this workspace" });
+    await user.type(input, "Ada");
+    const dialog = screen.getByRole("dialog");
+    await within(dialog).findAllByRole("option");
+
+    await user.keyboard("{ArrowDown}");
+    const firstOption = within(dialog).getAllByRole("option")[0];
+    expect(firstOption).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute("aria-activedescendant", firstOption.id);
+
+    await user.keyboard("{ArrowDown}");
+    const secondOption = within(dialog).getAllByRole("option")[1];
+    expect(secondOption).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("wraps to the last result with ArrowUp from the first result", async () => {
+    const user = userEvent.setup();
+    render(<GlobalSearch canCreate={false} />);
+    await user.click(screen.getByRole("button", { name: /Search CRM/ }));
+    const input = screen.getByRole("searchbox", { name: "Search this workspace" });
+    await user.type(input, "Ada");
+    const dialog = screen.getByRole("dialog");
+    const options = await within(dialog).findAllByRole("option");
+
+    await user.keyboard("{ArrowDown}");
+    expect(options[0]).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{ArrowUp}");
+    expect(options[0]).toHaveAttribute("aria-selected", "false");
+    expect(options[options.length - 1]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("does nothing on Enter when there are no results", async () => {
+    globalSearchAction.mockResolvedValueOnce({ ok: true, results: { lead: [], contact: [], company: [], deal: [] } });
+    const user = userEvent.setup();
+    render(<GlobalSearch canCreate={false} />);
+    await user.click(screen.getByRole("button", { name: /Search CRM/ }));
+    const input = screen.getByRole("searchbox", { name: "Search this workspace" });
+    await user.type(input, "nobody");
+    await screen.findByText("No matching records found.");
+
+    await user.keyboard("{ArrowDown}");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("resets the active result after a new query returns different results", async () => {
+    const user = userEvent.setup();
+    render(<GlobalSearch canCreate={false} />);
+    await user.click(screen.getByRole("button", { name: /Search CRM/ }));
+    const input = screen.getByRole("searchbox", { name: "Search this workspace" });
+    await user.type(input, "Ada");
+    const dialog = screen.getByRole("dialog");
+    await within(dialog).findAllByRole("option");
+
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(within(dialog).getAllByRole("option")[1]).toHaveAttribute("aria-selected", "true");
+
+    globalSearchAction.mockResolvedValueOnce({ ok: true, results: { ...populatedResults, lead: [], contact: [] } });
+    await user.clear(input);
+    await user.type(input, "new query");
+    await waitFor(() => expect(within(dialog).getAllByRole("option")).toHaveLength(2));
+    const refreshedOptions = within(dialog).getAllByRole("option");
+    expect(refreshedOptions.every((option) => option.getAttribute("aria-selected") === "false")).toBe(true);
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+
+    await user.keyboard("{ArrowDown}");
+    expect(refreshedOptions[0]).toHaveAttribute("aria-selected", "true");
+  });
 });

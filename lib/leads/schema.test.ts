@@ -20,6 +20,14 @@ describe("lead input schema", () => {
     expect(leadInputSchema.safeParse({ ...validLead, estimatedValue: "-1" }).success).toBe(false);
     expect(leadInputSchema.safeParse({ ...validLead, status: "converted" }).success).toBe(false);
   });
+
+  it("accepts a unique list of UUID tag IDs and rejects malformed or repeated IDs", () => {
+    const validTag = "9d26f4d8-85c7-47f0-a3fd-f2be2c7ff084";
+    const otherTag = "5c144f7b-80bd-48f0-8f4c-75a1859176e6";
+    expect(leadInputSchema.safeParse({ ...validLead, tagIds: [validTag, otherTag] }).success).toBe(true);
+    expect(leadInputSchema.safeParse({ ...validLead, tagIds: ["not-a-uuid"] }).success).toBe(false);
+    expect(leadInputSchema.safeParse({ ...validLead, tagIds: [validTag, validTag] }).success).toBe(false);
+  });
 });
 
 describe("bulk lead input validation", () => {

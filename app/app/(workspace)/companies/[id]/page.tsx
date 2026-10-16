@@ -20,6 +20,6 @@ export default async function CompanyDetailPage({ params, searchParams }: { para
   if (!detail) notFound();
   const canEditAll = hasWorkspacePermission(context.role, "crm.edit.all");
   const canEdit = canEditAll || (hasWorkspacePermission(context.role, "crm.edit.own") && detail.company.owner_id === context.userId);
-  return <CompanyDetailWorkspace detail={detail} owners={options.owners} section={typeof query.section === "string" ? query.section : "overview"} canEdit={canEdit} canEditAll={canEditAll} canManageAllActivities={context.role === "admin"}
+  return <CompanyDetailWorkspace detail={detail} owners={options.owners} tags={options.tags} section={typeof query.section === "string" ? query.section : "overview"} canEdit={canEdit} canEditAll={canEditAll} canManageAllActivities={context.role === "admin"}
     canReassign={hasWorkspacePermission(context.role, "crm.reassign")} canArchive={hasWorkspacePermission(context.role, "crm.archive")} currentUserId={context.userId} startEditing={query.edit === "1"} />;
 }

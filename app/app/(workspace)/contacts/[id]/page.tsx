@@ -43,6 +43,7 @@ export default async function ContactDetailPage({ params, searchParams }: {
     deals={detail.deals}
     notes={detail.notes}
     owners={options.owners}
+    tags={options.tags}
     tasks={detail.tasks}
     view={typeof query.view === "string" ? query.view : "overview"}
   />;

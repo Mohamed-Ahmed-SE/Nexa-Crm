@@ -1,6 +1,7 @@
 import "server-only";
 
 import { inactiveOwnerLabel, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
+import { listEntityTags, replaceEntityTags, listWorkspaceTags as listWorkspaceEntityTags } from "@/lib/tags/entity-tags";
 
 import { buildDealSearchFilter, type DealSearchParams } from "@/lib/deals/schema";
 
@@ -51,54 +52,15 @@ export type DealsData = {
 };
 
 export async function listWorkspaceTags(supabase: Supabase, workspaceId: string): Promise<DealTag[]> {
-  const { data, error } = await supabase.from("tags").select("id, name, color_token").eq("workspace_id", workspaceId).order("name");
-  if (error) throw new Error("Unable to load workspace tags.");
-  return (data ?? []) as DealTag[];
+  return listWorkspaceEntityTags(supabase, workspaceId);
 }
 
 export async function listDealTagsByEntityIds(supabase: Supabase, workspaceId: string, dealIds: string[]) {
-  const tagsByDeal = new Map<string, DealTag[]>();
-  if (!dealIds.length) return tagsByDeal;
-  const { data: links, error: linksError } = await supabase.from("entity_tags").select("entity_id, tag_id")
-    .eq("workspace_id", workspaceId).eq("entity_type", "deal").in("entity_id", dealIds);
-  if (linksError) throw new Error("Unable to load deal tags.");
-  const tagIds = [...new Set((links ?? []).map(({ tag_id }: { tag_id: string }) => tag_id))];
-  if (!tagIds.length) return tagsByDeal;
-  const { data: tags, error: tagsError } = await supabase.from("tags").select("id, name, color_token")
-    .eq("workspace_id", workspaceId).in("id", tagIds);
-  if (tagsError) throw new Error("Unable to load deal tags.");
-  const tagsById = new Map(((tags ?? []) as DealTag[]).map((tag) => [tag.id, tag]));
-  for (const link of (links ?? []) as Array<{ entity_id: string; tag_id: string }>) {
-    const tag = tagsById.get(link.tag_id);
-    if (tag) tagsByDeal.set(link.entity_id, [...(tagsByDeal.get(link.entity_id) ?? []), tag]);
-  }
-  return tagsByDeal;
+  return listEntityTags(supabase, workspaceId, "deal", dealIds);
 }
 
 export async function replaceDealTags(supabase: Supabase, workspaceId: string, dealId: string, tagIds: string[]) {
-  const { data: currentLinks, error: readError } = await supabase.from("entity_tags").select("tag_id")
-    .eq("workspace_id", workspaceId).eq("entity_type", "deal").eq("entity_id", dealId);
-  if (readError) return false;
-  const currentIds = new Set((currentLinks ?? []).map(({ tag_id }: { tag_id: string }) => tag_id));
-  const nextIds = new Set(tagIds);
-  const additions = tagIds.filter((tagId) => !currentIds.has(tagId));
-  const removals = [...currentIds].filter((tagId) => !nextIds.has(tagId));
-  if (additions.length) {
-    const { data: inserted, error } = await supabase.from("entity_tags")
-      .insert(additions.map((tag_id) => ({ workspace_id: workspaceId, entity_type: "deal", entity_id: dealId, tag_id }))).select("tag_id");
-    if (error || inserted?.length !== additions.length) {
-      if (inserted?.length) await supabase.from("entity_tags").delete().eq("workspace_id", workspaceId).eq("entity_type", "deal").eq("entity_id", dealId).in("tag_id", inserted.map(({ tag_id }: { tag_id: string }) => tag_id));
-      return false;
-    }
-  }
-  if (removals.length) {
-    const { error } = await supabase.from("entity_tags").delete().eq("workspace_id", workspaceId).eq("entity_type", "deal").eq("entity_id", dealId).in("tag_id", removals);
-    if (error) {
-      if (additions.length) await supabase.from("entity_tags").delete().eq("workspace_id", workspaceId).eq("entity_type", "deal").eq("entity_id", dealId).in("tag_id", additions);
-      return false;
-    }
-  }
-  return true;
+  return replaceEntityTags(supabase, workspaceId, "deal", dealId, tagIds);
 }
 
 export async function listWorkspaceDeals(supabase: Supabase, workspaceId: string, userId: string, userName: string, params: DealSearchParams): Promise<DealsData> {

@@ -19,6 +19,7 @@ export const companyInputSchema = z.object({
   country: blankableText(100),
   description: blankableText(5000),
   ownerId: optionalUuid,
+  tagIds: z.array(z.string().uuid("Choose valid tags.")).max(100, "Choose no more than 100 tags.").refine((tagIds) => new Set(tagIds).size === tagIds.length, "Each tag can be selected only once.").default([]),
 });
 export type CompanyInput = z.infer<typeof companyInputSchema>;
 
@@ -38,7 +39,7 @@ export const companyTaskSchema = z.object({
   assignedTo: optionalUuid,
 });
 
-export const companyViewColumns = ["company", "industry", "contacts", "open_deals", "pipeline_value", "owner", "last_activity", "next_activity"] as const;
+export const companyViewColumns = ["company", "industry", "contacts", "open_deals", "pipeline_value", "owner", "last_activity", "next_activity", "tags"] as const;
 export type CompanyViewColumn = (typeof companyViewColumns)[number];
 export const companyViewSorts = ["name_asc", "name_desc", "industry_asc", "industry_desc", "created_desc", "created_asc", "updated_desc", "updated_asc"] as const;
 export type CompanyViewSort = (typeof companyViewSorts)[number];
@@ -85,21 +86,23 @@ export function parsePersistedCompanyView(input: { filters: unknown; sort: unkno
 const companySearchSchema = z.object({
   q: z.string().trim().max(100).default(""),
   owner: z.union([z.string().uuid(), z.literal(""), z.literal("unassigned")]).default(""),
+  tagId: z.union([z.string().uuid(), z.literal("")]).default(""),
   sort: z.enum(companyViewSorts).default("name_asc"),
   page: z.coerce.number().int().min(1).max(10000).default(1),
 });
-export type CompanySearchParams = { q: string; ownerId: string; sort: CompanyViewSort; page: number };
+export type CompanySearchParams = { q: string; ownerId: string; tagId: string; sort: CompanyViewSort; page: number };
 
 export function parseCompanySearchParams(input: Record<string, string | string[] | undefined>): CompanySearchParams {
   const parsed = companySearchSchema.safeParse({
     q: typeof input.q === "string" ? input.q : "",
     owner: typeof input.owner === "string" ? input.owner : "",
+    tagId: typeof input.tagId === "string" ? input.tagId : "",
     sort: typeof input.sort === "string" ? input.sort : "name_asc",
     page: typeof input.page === "string" ? input.page : "1",
   });
   return parsed.success
-    ? { q: parsed.data.q, ownerId: parsed.data.owner, sort: parsed.data.sort, page: parsed.data.page }
-    : { q: "", ownerId: "", sort: "name_asc", page: 1 };
+    ? { q: parsed.data.q, ownerId: parsed.data.owner, tagId: parsed.data.tagId, sort: parsed.data.sort, page: parsed.data.page }
+    : { q: "", ownerId: "", tagId: "", sort: "name_asc", page: 1 };
 }
 
 export function escapeCompanySearchTerm(query: string): string {

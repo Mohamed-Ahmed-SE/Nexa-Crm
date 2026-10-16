@@ -50,11 +50,13 @@ function setupUpdate({
     if (activity.activity_type !== activityErrorType) activities.push(activity);
     return { error: activity.activity_type === activityErrorType ? new Error("activity insert failed") : null };
   });
+  const entityTagsRead = { eq: vi.fn().mockReturnThis(), then: (resolve: (result: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(resolve) };
   mocks.from.mockImplementation((table: string) => {
     if (table === "contacts") return {
       select: vi.fn().mockReturnValue(currentQuery), update: vi.fn().mockReturnValue(updateQuery),
     };
     if (table === "profiles") return { select: vi.fn().mockReturnValue(profileQuery) };
+    if (table === "entity_tags") return { select: vi.fn().mockReturnValue(entityTagsRead) };
     return { insert: mocks.activityInsert };
   });
   mocks.createSupabaseServerClient.mockResolvedValue({ from: mocks.from, rpc: vi.fn().mockResolvedValue({ data: [{ user_id: newOwnerId }], error: null }) });

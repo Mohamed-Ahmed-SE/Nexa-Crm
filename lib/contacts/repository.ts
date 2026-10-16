@@ -1,19 +1,21 @@
 import "server-only";
 
 import { inactiveOwnerLabel, listInactiveWorkspaceMemberIds } from "@/lib/workspace/inactive-owner-labels";
+import { listEntityTags, listWorkspaceTags as listWorkspaceEntityTags } from "@/lib/tags/entity-tags";
 
 import { buildContactSearchFilter, contactPageSize, contactSortOrder, escapeContactSearchTerm, parsePersistedContactView } from "@/lib/contacts/schema";
 import type { ContactSearchParams, ContactViewSort, ContactViewColumn } from "@/lib/contacts/schema";
 
 export type ContactOwner = { id: string; label: string };
 export type ContactCompany = { id: string; name: string; industry: string | null; employee_size: number | null; description: string | null; archived_at: string | null };
+export type ContactTag = { id: string; name: string; color_token: string | null };
 export type ContactRow = {
   id: string; workspace_id: string; company_id: string | null; first_name: string; last_name: string; email: string | null;
   phone: string | null; address?: string | null; job_title: string | null; linkedin_url: string | null; owner_id: string | null; ownerLabel?: string;
   lifecycle_status: "active" | "inactive" | "customer" | "former_customer"; created_at: string; updated_at: string;
   company?: ContactCompany | null;
+  tags?: ContactTag[];
 };
-export type ContactTag = { id: string; name: string; color_token: string | null };
 export type ContactListRow = ContactRow & { lastActivity: string | null; nextActivity: string | null; tags: ContactTag[] };
 export type ContactDeal = { id: string; title: string; amount: number; currency: string; status: string; expected_close_date: string | null; stage: { name: string } | null };
 export type ContactActivity = { id: string; activity_type: string; subject: string | null; body: string | null; occurred_at: string; created_by: string; owner_id: string | null; is_system_event: boolean };
@@ -24,6 +26,19 @@ export type ContactAttachment = { id: string; filename: string; mime_type: strin
 const lifecycleCounts = ["active", "customer"] as const;
 
 type Supabase = NonNullable<Awaited<ReturnType<typeof import("@/lib/supabase/server").createSupabaseServerClient>>>;
+
+export async function fetchMatchingEntityIdsForTag(supabase: Supabase, workspaceId: string, entityType: "contact" | "company", tagId: string) {
+  const matchingIds: string[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await supabase.from("entity_tags").select("entity_id")
+      .eq("workspace_id", workspaceId).eq("entity_type", entityType).eq("tag_id", tagId)
+      .order("entity_id").range(offset, offset + 999);
+    if (error) throw new Error(`Unable to filter ${entityType === "contact" ? "contacts" : "companies"} by tag.`);
+    const rows = data ?? [];
+    matchingIds.push(...rows.map(({ entity_id }: { entity_id: string }) => entity_id));
+    if (rows.length < 1000) return [...new Set(matchingIds)];
+  }
+}
 
 export async function listWorkspaceContacts(
   supabase: Supabase,
@@ -44,15 +59,23 @@ export async function listWorkspaceContacts(
   if (params.companyId) recordsQuery = recordsQuery.eq("company_id", params.companyId);
   if (params.ownerId === "unassigned") recordsQuery = recordsQuery.is("owner_id", null);
   else if (params.ownerId) recordsQuery = recordsQuery.eq("owner_id", params.ownerId);
+  let matchingTagContactIds: string[] | null = null;
+  if (params.tagId) {
+    matchingTagContactIds = await fetchMatchingEntityIdsForTag(supabase, workspaceId, "contact", params.tagId);
+    if (matchingTagContactIds.length) recordsQuery = recordsQuery.in("id", matchingTagContactIds);
+  }
   const searchFilter = buildContactSearchFilter(params.q);
   const companyFilter = companyIds.data?.length ? `company_id.in.(${companyIds.data.map(({ id }) => id).join(",")})` : null;
   const searchFilters = [searchFilter, companyFilter].filter(Boolean);
   if (searchFilters.length) recordsQuery = recordsQuery.or(searchFilters.join(","));
   for (const order of contactSortOrder(params.sort)) recordsQuery = recordsQuery.order(order.column, { ascending: order.ascending });
   recordsQuery = recordsQuery.range(start, start + contactPageSize - 1);
+  const recordsPromise = matchingTagContactIds?.length === 0
+    ? Promise.resolve({ data: [], error: null, count: 0 })
+    : recordsQuery;
 
   const [records, total, active, customer, companiesResult, ownerResult] = await Promise.all([
-    recordsQuery,
+    recordsPromise,
     supabase.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).is("archived_at", null),
     supabase.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("lifecycle_status", lifecycleCounts[0]).is("archived_at", null),
     supabase.from("contacts").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId).eq("lifecycle_status", lifecycleCounts[1]).is("archived_at", null),
@@ -132,13 +155,14 @@ export async function getContact(supabase: Supabase, workspaceId: string, id: st
 
 export async function getContactDetail(supabase: Supabase, workspaceId: string, id: string, activityPage = 1) {
   const activityStart = (activityPage - 1) * contactPageSize;
-  const [contactResult, dealsResult, activitiesResult, tasksResult, notesResult, filesResult] = await Promise.all([
+  const [contactResult, dealsResult, activitiesResult, tasksResult, notesResult, filesResult, tagsByContact] = await Promise.all([
     getContact(supabase, workspaceId, id),
     supabase.from("deals").select("id, title, amount, currency, status, expected_close_date, stage:pipeline_stages(name)").eq("workspace_id", workspaceId).eq("primary_contact_id", id).is("archived_at", null).order("updated_at", { ascending: false }),
     supabase.from("activities").select("id, activity_type, subject, body, occurred_at, created_by, owner_id, is_system_event", { count: "exact" }).eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("occurred_at", { ascending: false }).range(activityStart, activityStart + contactPageSize - 1),
     supabase.from("tasks").select("id, title, description, task_type, status, priority, due_at, assigned_to, created_by, completed_at").eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("due_at", { ascending: true }),
     supabase.from("notes").select("id, body, is_pinned, created_by, created_at, updated_at").eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }),
     supabase.from("attachments").select("id, filename, mime_type, size_bytes, uploaded_by, created_at, storage_path").eq("workspace_id", workspaceId).eq("related_entity_type", "contact").eq("related_entity_id", id).order("created_at", { ascending: false }),
+    listEntityTags(supabase, workspaceId, "contact", [id]),
   ]);
   if (contactResult.error) throw new Error("Unable to load this contact.");
   if (!contactResult.data) return null;
@@ -154,6 +178,7 @@ export async function getContactDetail(supabase: Supabase, workspaceId: string, 
       ownerLabel: contact.owner_id && inactiveOwnerIds.has(contact.owner_id)
         ? inactiveOwnerLabel(`Workspace member · ${contact.owner_id.slice(0, 6)}`)
         : undefined,
+      tags: tagsByContact.get(id) ?? [],
     },
     company: companyResult.data,
     deals: (dealsResult.data ?? []) as unknown as ContactDeal[],
@@ -171,13 +196,15 @@ export async function getContactForEdit(supabase: Supabase, workspaceId: string,
 }
 
 export async function listContactFormOptions(supabase: Supabase, workspaceId: string, currentUserId: string, currentUserName: string) {
-  const [companies, owners] = await Promise.all([
+  const [companies, owners, tags] = await Promise.all([
     supabase.from("companies").select("id, name, archived_at").eq("workspace_id", workspaceId).is("archived_at", null).order("name"),
     supabase.rpc("list_reassignable_workspace_members", { target_workspace_id: workspaceId, target_user_id: null, target_lead_id: null }),
+    listWorkspaceEntityTags(supabase, workspaceId),
   ]);
   if (companies.error || owners.error) throw new Error("Unable to load contact options.");
   return {
     companies: companies.data ?? [],
     owners: (owners.data ?? []).map(({ user_id }: { user_id: string }) => ({ id: user_id, label: user_id === currentUserId ? currentUserName : `Workspace member · ${user_id.slice(0, 6)}` })) as ContactOwner[],
+    tags,
   };
 }

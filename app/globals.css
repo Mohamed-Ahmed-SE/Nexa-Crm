@@ -1316,8 +1316,14 @@ input:disabled {
 }
 
 .global-search-result:hover,
-.global-search-result:focus-visible {
+.global-search-result:focus-visible,
+.global-search-result-active {
   background: hsl(var(--primary-soft));
+}
+
+.global-search-result-active {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: -2px;
 }
 
 .global-search-result-copy {
